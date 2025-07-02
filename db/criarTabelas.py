@@ -1,6 +1,21 @@
 from mysql.connector import Error
 from db.conexao import conectar_banco, fechar_banco
 
+def criar_tabela_empresas(conexao):
+    try:
+        cursor = conexao.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS empresas (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                cnpj VARCHAR(20),
+                razao_social VARCHAR(100)
+            )
+        """)
+        conexao.commit()
+        print("[INFO] Tabela 'empresas' criada/verificada com sucesso.")
+    except Error as e:
+        print(f"[ERRO] ao criar tabela 'empresas': {e}")
+        
 def criar_indice_se_nao_existir(cursor, nome_tabela, nome_indice, colunas, unique=False):
     cursor.execute(f"""
         SELECT COUNT(*) 
@@ -157,7 +172,7 @@ def criar_tabelas_principais():
                 ind_mov VARCHAR(5),
                 cst_icms VARCHAR(10),
                 cfop VARCHAR(10),
-                cod_nat VARCHAR(10),
+                cod_nat VARCHAR(11),
                 vl_bc_icms VARCHAR(20),
                 aliq_icms VARCHAR(10),
                 vl_icms VARCHAR(20),
@@ -303,7 +318,12 @@ def criar_tabelas_principais():
         criar_indice_se_nao_existir(cursor, 'c170_clone', 'idx_c170clone_produto_ncm_empresa', 'descr_compl, ncm, empresa_id')
         criar_indice_se_nao_existir(cursor, 'c170_clone', 'idx_c170clone_empresa_produto_ncm_aliquota', 'empresa_id, descr_compl, ncm, aliquota')
         criar_indice_se_nao_existir(cursor,'cadastro_tributacao','uniq_empresa_codigo_produto_ncm','empresa_id, codigo, produto(255), ncm',unique=True)
-            
+        criar_indice_se_nao_existir(cursor, 'c170nova', 'idx_c170nova_cod_item_id_c100_empresa', 'cod_item, id_c100, empresa_id')
+        criar_indice_se_nao_existir(cursor, 'c170', 'idx_c170_empresa_id_id_c100_cfop', 'empresa_id, id_c100, cfop')
+        criar_indice_se_nao_existir(cursor, '0200', 'idx_0200_cod_item_empresa_id', 'cod_item, empresa_id')
+        criar_indice_se_nao_existir(cursor, 'c170', 'idx_c170_id_empresa', 'id, empresa_id')
+
+
         conexao.commit()
         print("[DB] Todas as tabelas criadas ou atualizadas com sucesso.")
 
