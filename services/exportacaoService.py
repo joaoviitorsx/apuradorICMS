@@ -4,13 +4,15 @@ import xlsxwriter
 from decimal import Decimal
 from PySide6.QtCore import QThread, Signal
 from ui.popupAliquota import PopupAliquota
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
 from utils.mensagem import mensagem_error, mensagem_aviso, mensagem_sucesso
+from services.spedService import sinal_popup
 
 class ExportWorker(QThread):
     progress = Signal(int)
     finished = Signal(str)
     erro = Signal(str)
+    popup_aliquota = Signal()
 
     def __init__(self, empresa_id, mes, ano, caminho_arquivo):
         super().__init__()
@@ -24,7 +26,7 @@ class ExportWorker(QThread):
             self.progress.emit(5)
             periodo = f"{int(self.mes):02d}/{self.ano}"
 
-            conexao = conectar_banco()
+            conexao = conectarBanco()
             if not conexao:
                 self.erro.emit("Não foi possível conectar ao banco de dados.")
                 return
@@ -37,7 +39,7 @@ class ExportWorker(QThread):
             """, (self.empresa_id,))
             produtos_nulos = cursor.fetchall()
             if produtos_nulos:
-                self.erro.emit("Existem produtos com alíquotas nulas. Preencha antes de exportar.")
+                self.erro.emit("Existem produtos com alíquotas nulas. Importe os SPEDs Novamente e preencha as alíquotas.")
                 return
 
             cursor.execute("""
@@ -122,6 +124,6 @@ class ExportWorker(QThread):
         finally:
             try:
                 cursor.close()
-                fechar_banco(conexao)
+                fecharBanco(conexao)
             except:
                 pass
