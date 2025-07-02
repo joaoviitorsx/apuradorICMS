@@ -23,7 +23,7 @@ def conectar_mysql():
         print(f"[ERRO] ao conectar ao MySQL: {e}")
     return None
 
-def conectar_banco():
+def conectarBanco():
     try:
         conexao = mysql.connector.connect(
             host=HOST,
@@ -37,11 +37,11 @@ def conectar_banco():
         print(f"[ERRO] ao conectar ao banco de dados '{BANCO}': {e}")
     return None
 
-def fechar_banco(conexao):
+def fecharBanco(conexao):
     if conexao and conexao.is_connected():
         conexao.close()
 
-def inicializar_banco():
+def inicializarBanco():
     from db.criarTabelas import criar_tabelas_principais
 
     conexao_mysql = conectar_mysql()
@@ -56,9 +56,9 @@ def inicializar_banco():
     except Error as e:
         print(f"[ERRO] ao criar banco '{BANCO}': {e}")
     finally:
-        fechar_banco(conexao_mysql)
+        fecharBanco(conexao_mysql)
 
-    conexao_final = conectar_banco()
+    conexao_final = conectarBanco()
     if conexao_final:
         from db.criarTabelas import criar_tabela_empresas
         criar_tabela_empresas(conexao_final)
