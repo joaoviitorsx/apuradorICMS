@@ -1,5 +1,5 @@
 from mysql.connector import Error
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
 
 def criar_tabela_empresas(conexao):
     try:
@@ -15,7 +15,7 @@ def criar_tabela_empresas(conexao):
         print("[INFO] Tabela 'empresas' criada/verificada com sucesso.")
     except Error as e:
         print(f"[ERRO] ao criar tabela 'empresas': {e}")
-        
+
 def criar_indice_se_nao_existir(cursor, nome_tabela, nome_indice, colunas, unique=False):
     cursor.execute(f"""
         SELECT COUNT(*) 
@@ -38,7 +38,7 @@ def criar_indice_se_nao_existir(cursor, nome_tabela, nome_indice, colunas, uniqu
 
 
 def criar_tabelas_principais():
-    conexao = conectar_banco()
+    conexao = conectarBanco()
     if not conexao:
         return
 
@@ -330,4 +330,4 @@ def criar_tabelas_principais():
     except Error as e:
         print(f"[ERRO] Falha ao criar tabelas: {e}")
     finally:
-        fechar_banco(conexao)
+        fecharBanco(conexao)
