@@ -1,10 +1,14 @@
+import os
 import mysql.connector
 from mysql.connector import Error
+from dotenv import load_dotenv
 
-HOST = 'localhost'
-USUARIO = 'root'
-SENHA = '12345'
-BANCO = 'empresas_db'
+load_dotenv()
+
+HOST = os.getenv('HOST')
+USUARIO = os.getenv('USUARIO')
+SENHA = os.getenv('SENHA')
+BANCO = os.getenv('BANCO')
 
 def conectar_mysql():
     try:
@@ -36,7 +40,6 @@ def conectar_banco():
 def fechar_banco(conexao):
     if conexao and conexao.is_connected():
         conexao.close()
-        print("[INFO] Conexão com banco encerrada.")
 
 def inicializar_banco():
     from db.criarTabelas import criar_tabelas_principais
@@ -57,22 +60,10 @@ def inicializar_banco():
 
     conexao_final = conectar_banco()
     if conexao_final:
+        from db.criarTabelas import criar_tabela_empresas
         criar_tabela_empresas(conexao_final)
         criar_tabelas_principais() 
         return conexao_final
     return None
 
-def criar_tabela_empresas(conexao):
-    try:
-        cursor = conexao.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS empresas (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                cnpj VARCHAR(20),
-                razao_social VARCHAR(100)
-            )
-        """)
-        conexao.commit()
-        print("[INFO] Tabela 'empresas' criada/verificada com sucesso.")
-    except Error as e:
-        print(f"[ERRO] ao criar tabela 'empresas': {e}")
+
