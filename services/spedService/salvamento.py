@@ -1,19 +1,34 @@
-import time
 import traceback
-from utils.siglas import obter_sigla_estado
-from PySide6.QtCore import QMetaObject, Qt, QTimer
-from utils.mensagem import mensagem_sucesso, mensagem_error, mensagem_aviso
-from utils.sanitizacao import truncar, corrigir_unidade, corrigir_ind_mov, corrigir_cst_icms,TAMANHOS_MAXIMOS, get_column_index, get_fallback_value,get_fallback_value_by_index, calcular_periodo, validar_estrutura_c170
-from services.spedService.atualizacoes import atualizar_aliquota
-from db.conexao import conectar_banco, fechar_banco
+from utils.siglas import obterUF
+from utils.sanitizacao import truncar, corrigirUnidade, corrigir_ind_mov, corrigir_cst_icms, TAMANHOS_MAXIMOS, calcular_periodo, validar_estrutura_c170
 
 UNIDADE_PADRAO = "UN"
 
-async def salvar_no_banco_em_lote(conteudo, cursor, conexao, empresa_id, janela=None):
+async def salvarDados(conteudo, cursor, conexao, empresa_id, janela=None):
     linhas = conteudo 
-    print(f"[DEBUG] Iniciando processamento de {len(linhas)} linhas")
+    
+    dt_ini_0000 = None
+    for linha in linhas:
+        if linha.startswith("|0000|"):
+            partes = linha.split('|')[1:-1]
+            partes += [None] * (15 - len(partes))
+            dt_ini_0000 = partes[3]
+            periodo = calcular_periodo(dt_ini_0000)
 
-    contadores = {"0000": 0, "0150": 0, "0200": 0, "C100": 0, "C170": 0, "salvos": 0, "erros": 0}
+            cursor.execute("SELECT COUNT(*) FROM `0000` WHERE periodo = %s AND empresa_id = %s", (periodo, empresa_id))
+                           
+            if cursor.fetchone()[0] > 0:
+                cursor.execute("SELECT COUNT(*) FROM c170 WHERE periodo = %s AND empresa_id = %s", (periodo, empresa_id))
+                count_c170 = cursor.fetchone()[0]
+                raise ValueError(f"SPED do período {periodo} já foi processado anteriormente. {count_c170} itens já existem no banco.")
+            break
+    
+    if dt_ini_0000 is None:
+        raise ValueError("Não foi possível encontrar o registro 0000 nos dados fornecidos.")
+    
+    print(f"[DEBUG] Iniciando processamento de {len(linhas)} linhas")
+    
+    contadores = {"0000": 0, "0150": 0, "0200": 0, "C100": 0, "C170": 0, "salvos": 0, "erros": 0, "existentes": 0}
     lote_0000, lote_0150, lote_0200, lote_c100, lote_c170 = [], [], [], [], []
     registros_processados = set()
 
@@ -21,8 +36,29 @@ async def salvar_no_banco_em_lote(conteudo, cursor, conexao, empresa_id, janela=
     filial = None
     num_doc = None
     ultimo_num_doc = None
-
     mapa_documentos = {}
+
+    def verificarRegistroExistente(cursor, tabela, condicoes, retornar_id=False):
+        if not condicoes:
+            raise ValueError("As condições para verificação não podem estar vazias.")
+
+        where_clause = " AND ".join([f"`{campo}` = %s" for campo in condicoes])
+        valores = list(condicoes.values())
+
+        tabela_escapada = f"`{tabela}`"
+
+        if retornar_id:
+            sql = f"SELECT `id` FROM {tabela_escapada} WHERE {where_clause}"
+        else:
+            sql = f"SELECT COUNT(*) FROM {tabela_escapada} WHERE {where_clause}"
+
+        cursor.execute(sql, valores)
+        resultado = cursor.fetchone()
+
+        if retornar_id:
+            return resultado[0] if resultado else None
+        else:
+            return resultado[0] > 0
 
     def inserir_lote(sql, lote, descricao):
         if not lote: return
@@ -56,6 +92,7 @@ async def salvar_no_banco_em_lote(conteudo, cursor, conexao, empresa_id, janela=
                 dt_ini_0000 = partes[3]
                 cnpj = partes[6]
                 filial = cnpj[8:12] if cnpj else '0000'
+                periodo = calcular_periodo(dt_ini_0000)
                 partes += [filial, calcular_periodo(dt_ini_0000), empresa_id]
                 lote_0000.append(partes)
                 contadores["0000"] += 1
@@ -64,51 +101,92 @@ async def salvar_no_banco_em_lote(conteudo, cursor, conexao, empresa_id, janela=
                 partes += [None] * (13 - len(partes))
                 municipio = partes[7]
                 cod_uf = municipio[:2] if municipio else None
-                uf = obter_sigla_estado(cod_uf)
+                uf = obterUF(cod_uf)
                 pj_pf = "PF" if partes[4] is None else "PJ"
-                partes += [cod_uf, uf, pj_pf, calcular_periodo(dt_ini_0000), empresa_id]
-                lote_0150.append(partes)
-                contadores["0150"] += 1
+                periodo = calcular_periodo(dt_ini_0000)
+                cod_part = partes[1]
+                partes += [cod_uf, uf, pj_pf, periodo, empresa_id]
+                if verificarRegistroExistente(cursor, '0150', {
+                    'cod_part': cod_part,
+                    'periodo': periodo,
+                    'empresa_id': empresa_id
+                }):
+                    contadores["existentes"] += 1
+                else:
+                    lote_0150.append(partes)
+                    contadores["0150"] += 1
 
             elif linha.startswith("|0200|"):
                 partes += [None] * (13 - len(partes))
                 partes[1] = truncar(partes[1], TAMANHOS_MAXIMOS['cod_item'])
                 partes[2] = truncar(partes[2], TAMANHOS_MAXIMOS['descr_item'])
                 partes[5] = truncar(partes[5], TAMANHOS_MAXIMOS['unid'])
-                partes.append(calcular_periodo(dt_ini_0000))
+                periodo = calcular_periodo(dt_ini_0000)
+                cod_item = partes[1]
+                partes.append(periodo)
                 partes.append(empresa_id)
-                lote_0200.append(partes)
-                contadores["0200"] += 1
+
+                if verificarRegistroExistente(cursor, '0200', {
+                    'cod_item': cod_item,
+                    'periodo': periodo,
+                    'empresa_id': empresa_id
+                }):
+                    contadores["existentes"] += 1
+                else:
+                    lote_0200.append(partes)
+                    contadores["0200"] += 1
 
             elif linha.startswith("|C100|"):
                 partes += [None] * (29 - len(partes))
                 ind_oper, cod_part, num_doc, chv_nfe = partes[1], partes[4], partes[7], partes[9]
+                periodo = calcular_periodo(dt_ini_0000)
 
-                registro = [calcular_periodo(dt_ini_0000)] + partes + [filial, empresa_id]
+                condicoes = {'periodo': periodo, 'empresa_id': empresa_id}
+                if chv_nfe:
+                    condicoes['chv_nfe'] = chv_nfe
+                elif num_doc:
+                    condicoes['num_doc'] = num_doc
+                    if cod_part:
+                        condicoes['cod_part'] = cod_part
+                
+                id_c100_existente = verificarRegistroExistente(cursor, 'c100', condicoes, retornar_id=True)
+                
+                if id_c100_existente:
+                    contadores["existentes"] += 1
+                    if num_doc:
+                        mapa_documentos[num_doc] = {
+                            "ind_oper": ind_oper,
+                            "cod_part": cod_part,
+                            "chv_nfe": chv_nfe,
+                            "id_c100": id_c100_existente
+                        }
+                        ultimo_num_doc = num_doc
+                else:
+                    registro = [periodo] + partes + [filial, empresa_id]
 
-                cursor.execute("""
-                    INSERT INTO c100 (
-                        periodo, reg, ind_oper, ind_emit, cod_part, cod_mod, cod_sit, ser, num_doc, chv_nfe,
-                        dt_doc, dt_e_s, vl_doc, ind_pgto, vl_desc, vl_abat_nt, vl_merc, ind_frt, vl_frt, vl_seg,
-                        vl_out_da, vl_bc_icms, vl_icms, vl_bc_icms_st, vl_icms_st, vl_ipi, vl_pis, vl_cofins,
-                        vl_pis_st, vl_cofins_st, filial, empresa_id
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s)
-                """, registro)
+                    cursor.execute("""
+                        INSERT INTO c100 (
+                            periodo, reg, ind_oper, ind_emit, cod_part, cod_mod, cod_sit, ser, num_doc, chv_nfe,
+                            dt_doc, dt_e_s, vl_doc, ind_pgto, vl_desc, vl_abat_nt, vl_merc, ind_frt, vl_frt, vl_seg,
+                            vl_out_da, vl_bc_icms, vl_icms, vl_bc_icms_st, vl_icms_st, vl_ipi, vl_pis, vl_cofins,
+                            vl_pis_st, vl_cofins_st, filial, empresa_id
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s)
+                    """, registro)
 
-                id_c100 = cursor.lastrowid
+                    id_c100 = cursor.lastrowid
 
-                if num_doc:
-                    mapa_documentos[num_doc] = {
-                        "ind_oper": ind_oper,
-                        "cod_part": cod_part,
-                        "chv_nfe": chv_nfe,
-                        "id_c100": id_c100
-                    }
-                    ultimo_num_doc = num_doc
-                contadores["C100"] += 1
+                    if num_doc:
+                        mapa_documentos[num_doc] = {
+                            "ind_oper": ind_oper,
+                            "cod_part": cod_part,
+                            "chv_nfe": chv_nfe,
+                            "id_c100": id_c100
+                        }
+                        ultimo_num_doc = num_doc
+                    contadores["C100"] += 1
 
             elif linha.startswith("|C170|"):
                 partes += [None] * (39 - len(partes))
@@ -135,9 +213,18 @@ async def salvar_no_banco_em_lote(conteudo, cursor, conexao, empresa_id, janela=
 
                 num_item = partes[2]
                 cod_item = truncar(partes[3], TAMANHOS_MAXIMOS['cod_item'])
+            
+                if verificarRegistroExistente(cursor, 'c170', {
+                    'id_c100': id_c100,
+                    'num_item': num_item,
+                    'cod_item': cod_item
+                }):
+                    contadores["existentes"] += 1
+                    continue
+                
                 descr_compl = truncar(partes[4], TAMANHOS_MAXIMOS['descr_compl']) 
                 qtd = partes[5]
-                unid = truncar(corrigir_unidade(partes[6]), TAMANHOS_MAXIMOS['unid'])
+                unid = truncar(corrigirUnidade(partes[6]), TAMANHOS_MAXIMOS['unid'])
                 vl_item = partes[7]
                 vl_desc = partes[8]
                 ind_mov = corrigir_ind_mov(partes[9])
@@ -237,9 +324,8 @@ async def salvar_no_banco_em_lote(conteudo, cursor, conexao, empresa_id, janela=
                      %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, lote_c100, "|C100|")
 
-        for i in range(0, len(lote_c170), 100):
-            lote = lote_c170[i:i+100]
-            #print(f"[DEBUG] Tentando inserir lote C170 {i}-{i+len(lote)}, primeiro registro: {lote[0][:5]}...")
+        for i in range(0, len(lote_c170), 5000):
+            lote = lote_c170[i:i+5000]
             try:
                 cursor.executemany("""
                     INSERT INTO c170 (
@@ -260,7 +346,8 @@ async def salvar_no_banco_em_lote(conteudo, cursor, conexao, empresa_id, janela=
                 """, lote)
                 contadores["salvos"] += len(lote)
 
-                cursor.execute("SELECT COUNT(*) FROM c170 WHERE periodo = %s AND empresa_id = %s",(calcular_periodo(dt_ini_0000), empresa_id))
+                cursor.execute("SELECT COUNT(*) FROM c170 WHERE periodo = %s AND empresa_id = %s",
+                               (calcular_periodo(dt_ini_0000), empresa_id))
                 total_registros = cursor.fetchone()[0]
                 print(f"[DEBUG] Total de registros em c170 após inserção: {total_registros}")
             except Exception as e:
@@ -268,8 +355,8 @@ async def salvar_no_banco_em_lote(conteudo, cursor, conexao, empresa_id, janela=
                 print(f"[ERRO] Falha no lote C170 {i}-{i+len(lote)}: {e}")
 
         conexao.commit()
-        print(f"[FINAL] Processamento concluído: {contadores}")
-        return f"Processado com sucesso. {contadores['salvos']} itens salvos, {contadores['erros']} com erro."
+        print(f"[FINAL] Processamento concluído: {contadores['salvos']} salvos, {contadores['erros']} erros.")
+        return f"Processamento finalizado e dados salvos no banco."
 
     except Exception as e:
         print("[FATAL] Erro durante o salvamento:", e)
