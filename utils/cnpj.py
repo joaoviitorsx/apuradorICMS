@@ -4,7 +4,6 @@ import re
 from functools import wraps
 from time import time
 
-
 def create_cache(ttl=3600):
     cache_dict = {}
     def decorator(func):
@@ -41,7 +40,7 @@ semaforo = asyncio.Semaphore(5)
 
 
 @create_cache()
-async def buscar_informacoes(cnpj: str, tentativas: int = 6) -> tuple:
+async def buscar_informacoes(cnpj: str, semaforo, tentativas: int = 6) -> tuple:
     url = f'https://minhareceita.org/{cnpj}'
     timeout = aiohttp.ClientTimeout(total=30)
 
@@ -69,14 +68,14 @@ async def buscar_informacoes(cnpj: str, tentativas: int = 6) -> tuple:
     return None, None, None, None
 
 
-async def _processar_cnpj(cnpj: str, resultados: dict):
+async def _processar_cnpj(cnpj: str, resultados: dict, semaforo):
     cnpj_limpo = remover_caracteres_nao_numericos(cnpj)
 
     if not validar_cnpj(cnpj_limpo):
         print(f"[IGNORADO] CNPJ inválido: {cnpj}")
         return
 
-    cnae_codigo, existe_na_lista, uf, simples = await buscar_informacoes(cnpj_limpo)
+    cnae_codigo, existe_na_lista, uf, simples = await buscar_informacoes(cnpj_limpo, semaforo)
 
     if all([cnae_codigo, existe_na_lista, uf]):
         resultados[cnpj] = (cnae_codigo, existe_na_lista, uf, simples)
@@ -88,6 +87,7 @@ async def _processar_cnpj(cnpj: str, resultados: dict):
 async def processar_cnpjs(cnpjs: list[str]) -> dict:
     resultados = {}
     tasks = []
+    semaforo = asyncio.Semaphore(5)
 
     for cnpj in cnpjs:
         if cnpj in cache_resultados:
@@ -97,7 +97,7 @@ async def processar_cnpjs(cnpjs: list[str]) -> dict:
             else:
                 print(f"[CACHE ERRO] Cache inválido para {cnpj}. Ignorando.")
         else:
-            tasks.append(_processar_cnpj(cnpj, resultados))
+            tasks.append(_processar_cnpj(cnpj, resultados, semaforo))
 
     if tasks:
         await asyncio.gather(*tasks)
