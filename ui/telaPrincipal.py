@@ -15,7 +15,7 @@ from utils.icone import resource_path
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, empresa, empresa_id):
         super().__init__()
-        self.setWindowTitle(f'Apurado de ICMS Varejo - Assertivus Contábil - {empresa}')
+        self.setWindowTitle(f'Apurado de ICMS - Assertivus Contábil - {empresa}')
         self.setGeometry(200, 200, 900, 700)
         self.setStyleSheet('background-color: #030d18;')
 
