@@ -1,4 +1,4 @@
-def obter_sigla_estado(codigo_uf):
+def obterUF(codigo_uf):
     uf_siglas = {
         '11': 'RO',
         '12': 'AC',
