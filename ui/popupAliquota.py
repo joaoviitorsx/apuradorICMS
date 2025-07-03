@@ -1,8 +1,8 @@
 import pandas as pd
-from unidecode import unidecode
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QFileDialog, QHBoxLayout, QMessageBox, QApplication
 from PySide6.QtCore import Qt
-from db.conexao import conectar_banco, fechar_banco
+from PySide6 import QtGui
+from db.conexao import conectarBanco, fecharBanco
 
 class PopupAliquota(QDialog):
     def __init__(self, empresa_id, parent=None):
@@ -11,6 +11,12 @@ class PopupAliquota(QDialog):
         self.setWindowTitle("Preencher Alíquotas Nulas")
         self.setMinimumSize(800, 600)
         self.setup_ui()
+
+        screen = QtGui.QGuiApplication.screenAt(QtGui.QCursor.pos())
+        screen_geometry = screen.availableGeometry() if screen else QApplication.primaryScreen().availableGeometry()
+
+        center_point = screen_geometry.center()
+        self.move(center_point - self.rect().center())
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -79,7 +85,7 @@ class PopupAliquota(QDialog):
         self.carregar_dados()
 
     def carregar_dados(self):
-        conexao = conectar_banco()
+        conexao = conectarBanco()
         cursor = conexao.cursor()
 
         cursor.execute("""
@@ -96,12 +102,11 @@ class PopupAliquota(QDialog):
 
         dados = cursor.fetchall()
         cursor.close()
-        fechar_banco(conexao)
+        fecharBanco(conexao)
 
         self.tabela.setRowCount(len(dados))
         self.tabela.setColumnCount(5)
         self.tabela.setHorizontalHeaderLabels(["ID", "Código", "Produto", "NCM", "Alíquota"])
-        self.tabela.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         for row_idx, (id_, codigo, produto, ncm, aliquota) in enumerate(dados):
             self.tabela.setItem(row_idx, 0, QTableWidgetItem(str(id_)))
@@ -112,9 +117,13 @@ class PopupAliquota(QDialog):
             item_aliquota.setFlags(item_aliquota.flags() | Qt.ItemIsEditable)
             self.tabela.setItem(row_idx, 4, item_aliquota)
 
+        self.tabela.resizeColumnsToContents()
+        self.tabela.setColumnWidth(2, max(200, self.tabela.columnWidth(2)))
+        self.tabela.horizontalHeader().setStretchLastSection(True)
+
     def salvar_dados(self):
         print("Salvando no banco")
-        conexao = conectar_banco()
+        conexao = conectarBanco()
         cursor = conexao.cursor()
 
         try:
@@ -125,11 +134,12 @@ class PopupAliquota(QDialog):
 
                 print(f"[DEBUG] Atualizando produto='{produto}', NCM='{ncm}', nova_aliquota='{nova_aliquota}'")
 
-                cursor.execute("""
-                    UPDATE cadastro_tributacao
-                    SET aliquota = %s
-                    WHERE produto = %s AND ncm = %s AND empresa_id = %s
-                """, (nova_aliquota, produto, ncm, self.empresa_id))
+                if nova_aliquota:
+                    cursor.execute("""
+                        UPDATE cadastro_tributacao
+                        SET aliquota = %s
+                        WHERE produto = %s AND ncm = %s AND empresa_id = %s
+                    """, (nova_aliquota, produto, ncm, self.empresa_id))
 
             conexao.commit()
             print("[DEBUG] Commit realizado.")
@@ -142,7 +152,7 @@ class PopupAliquota(QDialog):
             print(f"[ERRO] {e}")
         finally:
             cursor.close()
-            fechar_banco(conexao)
+            fecharBanco(conexao)
 
     def exportar_planilha_modelo(self):
         caminho, _ = QFileDialog.getSaveFileName(self, "Salvar Planilha Modelo", "Tributacao.xlsx", "Arquivos Excel (*.xlsx)")

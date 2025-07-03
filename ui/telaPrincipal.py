@@ -1,15 +1,16 @@
 import os
 import asyncio
 from PySide6 import QtWidgets, QtGui, QtCore
-from PySide6.QtWidgets import QMessageBox, QDialog, QFileDialog
+from PySide6.QtWidgets import QMessageBox, QFileDialog, QApplication
 from utils.icone import usar_icone
 from services.tributacaoService import enviar_tributacao
-from services.spedService.carregamento import iniciar_processamento_sped
+from services.spedService.carregamento import iniciarProcessamentoSped
 from services.exportacaoService import ExportWorker
 from services.spedService import sinal_popup
 from ui.popupAliquota import PopupAliquota
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
 from utils.mensagem import mensagem_sucesso, mensagem_error, mensagem_aviso
+from utils.icone import resource_path
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, empresa, empresa_id):
@@ -36,7 +37,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.layout.addLayout(self.stack_layout)
 
         self.imagem_placeholder = QtWidgets.QLabel()
-        self.imagem_placeholder.setPixmap(QtGui.QPixmap("images/logo.png").scaled(300, 300, QtCore.Qt.KeepAspectRatio))
+        self.imagem_placeholder.setPixmap(QtGui.QPixmap(resource_path("images/logo.png")).scaled(300, 300, QtCore.Qt.KeepAspectRatio))
         self.imagem_placeholder.setAlignment(QtCore.Qt.AlignCenter)
         self.stack_layout.addWidget(self.imagem_placeholder)
 
@@ -47,12 +48,19 @@ class MainWindow(QtWidgets.QMainWindow):
             popup = PopupAliquota(empresa_id, janela_pai)
             resultado = popup.exec()
             sinal_popup.resultado_popup = resultado
+            usar_icone(popup)
             if sinal_popup.event_loop and sinal_popup.event_loop.isRunning():
                 sinal_popup.event_loop.quit()
 
         sinal_popup.abrir_popup_signal.connect(abrir_popup_aliquota)
 
         self._criar_seletor_mes_ano()
+
+        screen = QtGui.QGuiApplication.screenAt(QtGui.QCursor.pos())
+        screen_geometry = screen.availableGeometry() if screen else QApplication.primaryScreen().availableGeometry()
+
+        center_point = screen_geometry.center()
+        self.move(center_point - self.rect().center())
 
     def _criar_botao_voltar(self):
         layout_topo = QtWidgets.QHBoxLayout()
@@ -63,7 +71,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QPushButton {
                 background-color: #001F3F;
                 color: white;
-                font-size: 14px;
+                font-size: 18px;
                 font-weight: bold;
                 border-radius: 5px;
                 padding: 5px 10px;
@@ -74,9 +82,18 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         """)
         btn_voltar.clicked.connect(self._voltarTelaInicial)
-
         layout_topo.addWidget(btn_voltar, alignment=QtCore.Qt.AlignLeft)
+
         layout_topo.addStretch()
+
+        btn_icone = QtWidgets.QPushButton()
+        btn_icone.setIcon(QtGui.QIcon(resource_path("images/config.png")))
+        btn_icone.setIconSize(QtCore.QSize(32, 32))
+        btn_icone.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        btn_icone.setStyleSheet("background-color: transparent; border: none;")
+        btn_icone.clicked.connect(self._abrir_tela_produto)
+        layout_topo.addWidget(btn_icone, alignment=QtCore.Qt.AlignRight)
+
         self.layout.addLayout(layout_topo)
 
     def _setup_empresa_header(self):
@@ -122,7 +139,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _processar_sped(self):
         self.progress_bar.setValue(0)
-        iniciar_processamento_sped(self.empresa_id, self.progress_bar, self.label_arquivo, self)
+        iniciarProcessamentoSped(self.empresa_id, self.progress_bar, self.label_arquivo, self)
 
     def _criar_seletor_mes_ano(self):
         mes_frame = QtWidgets.QHBoxLayout()
@@ -165,7 +182,7 @@ class MainWindow(QtWidgets.QMainWindow):
             mensagem_aviso("Selecione um mês e um ano válidos.")
             return
 
-        conexao = conectar_banco()
+        conexao = conectarBanco()
 
         cursor = conexao.cursor()
         periodo = f"{mes.zfill(2)}/{ano}"
@@ -177,7 +194,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if total == 0:
             mensagem_aviso(f"Não há registros para o período {mes}/{ano}.")
-            fechar_banco(conexao)
+            fecharBanco(conexao)
             return
 
         if not conexao:
@@ -190,7 +207,7 @@ class MainWindow(QtWidgets.QMainWindow):
             resultado = cursor.fetchone()
             nome_empresa = resultado[0] if resultado else "empresa"
         finally:
-            fechar_banco(conexao)
+            fecharBanco(conexao)
 
         sugestao_nome = f"{ano}-{mes}-{nome_empresa}.xlsx"
 
@@ -224,4 +241,14 @@ class MainWindow(QtWidgets.QMainWindow):
         from ui.telaEmpresa import EmpresaWindow
         self.tela_empresa = EmpresaWindow()
         self.tela_empresa.show()
+        usar_icone(self.tela_empresa)
         self.close()
+    
+    def _abrir_tela_produto(self):
+        from ui.telaProdutos import TelaProduto
+        self.tela_produto = TelaProduto(self.empresa_id)
+        tela_produtos = TelaProduto(self.empresa_id)
+        tela_produtos.resize(self.size())
+        tela_produtos.move(self.pos())
+        usar_icone(self.tela_produto)
+        self.tela_produto.show()

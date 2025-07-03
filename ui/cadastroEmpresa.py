@@ -2,7 +2,7 @@ import re
 from PySide6 import QtWidgets, QtCore, QtGui
 from utils.mensagem import mensagem_error, mensagem_sucesso
 from utils.icone import usar_icone
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
 from utils.cnpj import consultar_cnpj_api
 
 class EmpresaCadastro(QtWidgets.QWidget):
@@ -32,7 +32,7 @@ class EmpresaCadastro(QtWidgets.QWidget):
         self.razao_social_label = QtWidgets.QLabel('Razão Social:')
         self.razao_social_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #000000;")
         self.razao_social_input = QtWidgets.QLineEdit()
-        self.razao_social_input.setReadOnly(True)  # agora é preenchido automaticamente
+        self.razao_social_input.setReadOnly(True)
         self.razao_social_input.setStyleSheet("font-size: 20px; padding: 8px; border: 1px solid #ccc; border-radius: 5px; background-color: #f0f0f0; color: #000000;")
 
         self.btn_cadastrar_empresa = QtWidgets.QPushButton('Cadastrar')
@@ -64,6 +64,12 @@ class EmpresaCadastro(QtWidgets.QWidget):
         center_layout.addStretch()
 
         self.layout.addLayout(center_layout)
+
+        screen = QtGui.QGuiApplication.screenAt(QtGui.QCursor.pos())
+        screen_geometry = screen.availableGeometry() if screen else QtWidgets.QApplication.primaryScreen().availableGeometry()
+
+        center_point = screen_geometry.center()
+        self.move(center_point - self.rect().center())
 
     def _botao_estilo(self):
         return """
@@ -121,7 +127,7 @@ class EmpresaCadastro(QtWidgets.QWidget):
         from ui.telaEmpresa import EmpresaWindow
         self.empresas = EmpresaWindow()
         usar_icone(self.empresas)
-        self.empresas.showMaximized()
+        self.empresas.show()
         self.close()
 
 
@@ -136,19 +142,19 @@ class CadastroEmpresaWorker(QtCore.QThread):
 
     def run(self):
         try:
-            conexao = conectar_banco()
+            conexao = conectarBanco()
             cursor = conexao.cursor()
 
             cursor.execute("SELECT id FROM empresas WHERE cnpj = %s", (self.cnpj,))
             if cursor.fetchone():
                 self.erro_ocorrido.emit("Empresa já cadastrada com este CNPJ.")
-                fechar_banco(conexao)
+                fecharBanco(conexao)
                 return
 
             cursor.execute("INSERT INTO empresas (cnpj, razao_social) VALUES (%s, %s)", (self.cnpj, self.razao))
             conexao.commit()
             cursor.close()
-            fechar_banco(conexao)
+            fecharBanco(conexao)
             self.cadastro_finalizado.emit("Empresa cadastrada com sucesso.")
         except Exception as e:
             self.erro_ocorrido.emit(str(e))

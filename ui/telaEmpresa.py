@@ -1,9 +1,11 @@
 from PySide6 import QtWidgets, QtGui, QtCore
 from ui.cadastroEmpresa import EmpresaCadastro
 from ui.telaPrincipal import MainWindow
-from utils.mensagem import mensagem_error, mensagem_aviso, mensagem_sucesso
+from utils.mensagem import mensagem_error, mensagem_aviso
 from utils.icone import usar_icone
-from db.conexao import conectar_banco, fechar_banco, inicializar_banco
+from db.conexao import conectarBanco, fecharBanco, inicializarBanco
+
+from utils.icone import resource_path
 
 class WorkerInicializacao(QtCore.QThread):
     terminado = QtCore.Signal()
@@ -11,10 +13,10 @@ class WorkerInicializacao(QtCore.QThread):
 
     def run(self):
         try:
-            conexao = inicializar_banco()
+            conexao = inicializarBanco()
             if conexao:
                 print("[DEBUG] Banco e tabelas garantidos com sucesso!")
-                fechar_banco(conexao)
+                fecharBanco(conexao)
             self.terminado.emit()
         except Exception as e:
             self.erro.emit(str(e))
@@ -25,12 +27,12 @@ class WorkerCarregarEmpresas(QtCore.QThread):
 
     def run(self):
         try:
-            conexao = conectar_banco()
+            conexao = conectarBanco()
             cursor = conexao.cursor()
             cursor.execute("SELECT razao_social FROM empresas ORDER BY razao_social ASC")
             empresas = [row[0] for row in cursor.fetchall()]
             cursor.close()
-            fechar_banco(conexao)
+            fecharBanco(conexao)
             self.empresas_carregadas.emit(empresas)
         except Exception as e:
             self.erro.emit(str(e))
@@ -47,13 +49,18 @@ class EmpresaWindow(QtWidgets.QWidget):
         self._setup_layout()
         self._iniciar_verificacao_banco()
 
+        screen = QtGui.QGuiApplication.screenAt(QtGui.QCursor.pos())
+        screen_geometry = screen.availableGeometry() if screen else QtWidgets.QApplication.primaryScreen().availableGeometry()
+        center_point = screen_geometry.center()
+        self.move(center_point - self.rect().center())
+
     def _setup_layout(self):
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.layout.setSpacing(10)
 
         self.logo_label = QtWidgets.QLabel()
-        pixmap = QtGui.QPixmap("images/logo.png").scaled(300, 300, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        pixmap = QtGui.QPixmap(resource_path("images/logo.png")).scaled(300, 300, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         self.logo_label.setPixmap(pixmap)
         self.logo_label.setAlignment(QtCore.Qt.AlignCenter)
         self.layout.addWidget(self.logo_label, alignment=QtCore.Qt.AlignCenter)
@@ -142,12 +149,12 @@ class EmpresaWindow(QtWidgets.QWidget):
             return
 
         try:
-            conexao = conectar_banco()
+            conexao = conectarBanco()
             cursor = conexao.cursor()
             cursor.execute("SELECT id FROM empresas WHERE razao_social = %s", (nome_empresa,))
             resultado = cursor.fetchone()
             cursor.close()
-            fechar_banco(conexao)
+            fecharBanco(conexao)
 
             if not resultado:
                 mensagem_error("Empresa não encontrada na base de dados.")
@@ -156,7 +163,7 @@ class EmpresaWindow(QtWidgets.QWidget):
             empresa_id = resultado[0]
             self.janela_principal = MainWindow(nome_empresa, empresa_id)
             usar_icone(self.janela_principal)
-            self.janela_principal.showMaximized()
+            self.janela_principal.show()
             self.close()
         except Exception as e:
             mensagem_error(f"Erro ao abrir a empresa: {e}")
@@ -164,7 +171,7 @@ class EmpresaWindow(QtWidgets.QWidget):
     def cadastrar_empresa(self, nome_banco):
         self.empresa_cadastro = EmpresaCadastro(nome_banco)
         usar_icone(self.empresa_cadastro)
-        self.empresa_cadastro.showMaximized()
+        self.empresa_cadastro.show()
         self.close()
 
     def exibir_erro_empresas(self, erro):
