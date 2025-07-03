@@ -1,9 +1,9 @@
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
 
 async def clonar_tabela_c170nova(empresa_id):
     print(f"[INÍCIO] Clonagem completa da c170nova para c170_clone (empresa_id={empresa_id})")
     
-    conexao = conectar_banco()
+    conexao = conectarBanco()
     if not conexao:
         print("[ERRO] Falha na conexão com o banco.")
         return
@@ -37,5 +37,5 @@ async def clonar_tabela_c170nova(empresa_id):
 
     finally:
         cursor.close()
-        fechar_banco(conexao)
+        fecharBanco(conexao)
         print("[FIM] Clonagem finalizada.")
