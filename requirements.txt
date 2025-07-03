@@ -7,3 +7,4 @@ aiohttp
 reportlab
 unidecode
 xlsxWriter
+python-dotenv

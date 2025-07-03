@@ -1,10 +1,10 @@
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
 
 def limpar_tabelas_temporarias(empresa_id):
     print("iniciando limpeza condicional")
     tabelas = ['`0000`', '`0150`', '`0200`', '`c100`', '`c170`', '`c170nova`']
 
-    conexao = conectar_banco()
+    conexao = conectarBanco()
     cursor = conexao.cursor()
     try:
         houve_limpeza = False
@@ -30,4 +30,4 @@ def limpar_tabelas_temporarias(empresa_id):
         conexao.rollback()
     finally:
         cursor.close()
-        fechar_banco(conexao)
+        fecharBanco(conexao)
