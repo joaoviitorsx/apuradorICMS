@@ -1,4 +1,4 @@
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
 from utils.cnpj import processar_cnpjs
 from PySide6.QtCore import QObject, Signal
 
@@ -10,8 +10,8 @@ mensageiro = Mensageiro()
 
 BATCH_SIZE = 50
 
-async def comparar_adicionar_atualizar_fornecedores(empresa_id):
-    conexao = conectar_banco()
+async def fornecedor(empresa_id):
+    conexao = conectarBanco()
     cursor = conexao.cursor()
 
     try:
@@ -22,7 +22,7 @@ async def comparar_adicionar_atualizar_fornecedores(empresa_id):
         """)
         columns = [row[0] for row in cursor.fetchall()]
         if not all(col in columns for col in ['cnae', 'decreto', 'uf', 'simples']):
-            print("⚠️ Colunas obrigatórias não encontradas.")
+            print("Colunas obrigatórias não encontradas.")
             return
 
         print("Buscando fornecedores a adicionar")
@@ -79,4 +79,4 @@ async def comparar_adicionar_atualizar_fornecedores(empresa_id):
         print(f"Erro durante atualização de fornecedores: {e}")
     finally:
         cursor.close()
-        fechar_banco(conexao)
+        fecharBanco(conexao)
