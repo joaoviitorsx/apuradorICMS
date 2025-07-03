@@ -5,10 +5,10 @@ import math
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtCore import QObject, Signal
 
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
 from utils.processData import process_data
 from utils.mensagem import mensagem_sucesso, mensagem_error, mensagem_aviso
-from .salvamento import salvar_no_banco_em_lote
+from .salvamento import salvarDados
 from .pos_processamento import etapas_pos_processamento
 from services.fornecedorService import mensageiro as mensageiro_fornecedor
 from services.spedService.limpeza import limpar_tabelas_temporarias
@@ -19,13 +19,13 @@ class Mensageiro(QObject):
     sinal_sucesso = Signal(str)
     sinal_erro = Signal(str)
 
-def processar_sped_thread(empresa_id, progress_bar, label_arquivo, caminhos, janela=None, mensageiro=None):
+def processarSpedThread(empresa_id, progress_bar, label_arquivo, caminhos, janela=None, mensageiro=None):
     print(f"[DEBUG] Iniciando thread de processamento SPED com {len(caminhos)} arquivo(s)")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
     result, mensagem_final = loop.run_until_complete(
-        processar_sped(empresa_id, progress_bar, label_arquivo, caminhos, janela)
+        processarSped(empresa_id, progress_bar, label_arquivo, caminhos, janela)
     )
 
     print(f"[DEBUG] Thread de processamento SPED finalizada")
@@ -38,12 +38,11 @@ def processar_sped_thread(empresa_id, progress_bar, label_arquivo, caminhos, jan
             print("[DEBUG] Emitindo sinal de erro")
             mensageiro.sinal_erro.emit(mensagem_final)
 
-    progress_bar.setValue(0)
     loop.close()
 
-def iniciar_processamento_sped(empresa_id, progress_bar, label_arquivo, janela=None):
+def iniciarProcessamentoSped(empresa_id, progress_bar, label_arquivo, janela=None):
     print(f"[DEBUG] Solicitando seleção de arquivos SPED...")
-    caminhos, _ = QFileDialog.getOpenFileNames(None, "Inserir Sped", "", "Arquivos Sped (*.txt)")
+    caminhos, _ = QFileDialog.getOpenFileNames(None, "Inserir Speds", "", "Arquivos Sped (*.txt)")
     if not caminhos:
         mensagem_aviso("Nenhum arquivo selecionado.", parent=janela)
         print(f"[DEBUG] Nenhum arquivo selecionado.")
@@ -57,31 +56,30 @@ def iniciar_processamento_sped(empresa_id, progress_bar, label_arquivo, janela=N
 
     print(f"[DEBUG] {len(caminhos)} arquivo(s) selecionado(s):")
     for i, caminho in enumerate(caminhos):
-        print(f"[DEBUG]   {i+1}. {os.path.basename(caminho)} ({os.path.getsize(caminho)/1024:.1f} KB)")
+        print(f"[DEBUG] {i+1}. {os.path.basename(caminho)} ({os.path.getsize(caminho)/1024:.1f} KB)")
 
     thread = threading.Thread(
-        target=processar_sped_thread,
+        target=processarSpedThread,
         args=(empresa_id, progress_bar, label_arquivo, caminhos, janela, mensageiro)
     )
     thread.start()
     print(f"[DEBUG] Thread de processamento SPED iniciada")
 
-async def processar_sped(empresa_id, progress_bar, label_arquivo, caminhos, janela=None):
-    progress_bar.setValue(0)
+async def processarSped(empresa_id, progress_bar, label_arquivo, caminhos, janela=None):
     print(f"[DEBUG] Iniciando processamento de {len(caminhos)} arquivo(s) SPED...")
 
-    conexao_cheque = conectar_banco()
-    if not conexao_cheque:
+    conexaoCheck = conectarBanco()
+    if not conexaoCheck:
         return False, "Erro ao conectar ao banco"
 
-    cursor_cheque = conexao_cheque.cursor()
-    cursor_cheque.execute("SHOW TABLES LIKE 'cadastro_tributacao'")
-    if not cursor_cheque.fetchone():
-        cursor_cheque.close()
-        fechar_banco(conexao_cheque)
+    checagem = conexaoCheck.cursor()
+    checagem.execute("SHOW TABLES LIKE 'cadastro_tributacao'")
+    if not checagem.fetchone():
+        checagem.close()
+        fecharBanco(conexaoCheck)
         return False, "Tributação não encontrada. Envie primeiro a tributação."
-    cursor_cheque.close()
-    fechar_banco(conexao_cheque)
+    checagem.close()
+    fecharBanco(conexaoCheck)
 
     total = len(caminhos)
     progresso_por_arquivo = math.ceil(100 / total) if total > 0 else 100
@@ -115,15 +113,15 @@ async def processar_sped(empresa_id, progress_bar, label_arquivo, caminhos, jane
             progress_bar.setValue(progresso_atual)
             await asyncio.sleep(0.1)
 
-        conexao = conectar_banco()
+        conexao = conectarBanco()
         cursor = conexao.cursor()
 
-        limpar_tabelas_temporarias(empresa_id)
+        #limpar_tabelas_temporarias(empresa_id)
 
-        mensagem = await salvar_no_banco_em_lote(dados_gerais, cursor, conexao, empresa_id)
+        mensagem = await salvarDados(dados_gerais, cursor, conexao, empresa_id)
         conexao.commit()
         cursor.close()
-        fechar_banco(conexao)
+        fecharBanco(conexao)
 
         if isinstance(mensagem, str) and not mensagem.lower().startswith(("falha", "erro")):
             await etapas_pos_processamento(empresa_id, progress_bar, janela_pai=janela)
@@ -131,17 +129,35 @@ async def processar_sped(empresa_id, progress_bar, label_arquivo, caminhos, jane
         else:
             return False, mensagem or "Erro durante salvamento em lote."
 
+    except ValueError as ve:
+        print(f"[AVISO] Processamento interrompido: {ve}")
+        if conexao:
+            try:
+                cursor.close()
+                fecharBanco(conexao)
+            except:
+                pass
+        progress_bar.setValue(0)
+        label_arquivo.setText("Processamento interrompido.")
+        return False, str(ve)
     except Exception as e:
         import traceback
         print("[ERRO] Falha no processar_sped:", traceback.format_exc())
+        if conexao:
+            try:
+                cursor.close()
+                fecharBanco(conexao)
+            except:
+                pass
+        progress_bar.setValue(0)
+        label_arquivo.setText("Erro no processamento.")
         return False, f"Erro inesperado durante o processamento: {e}"
 
     finally:
-        try:
-            fechar_banco(conexao)
-        except:
-            pass
-        progress_bar.setValue(100)
+        if conexao:
+            try:
+                fecharBanco(conexao)
+            except:
+                pass
         await asyncio.sleep(0.5)
-        progress_bar.setValue(0)
         label_arquivo.setText("Processamento finalizado.")
