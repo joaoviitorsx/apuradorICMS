@@ -1,9 +1,10 @@
-from db.conexao import conectar_banco, fechar_banco
+from db.conexao import conectarBanco, fecharBanco
+from utils.conversor import Conversor
 
-async def atualizar_aliquota(empresa_id, lote_tamanho=5000):
+async def atualizarAliquota(empresa_id, lote_tamanho=5000):
     print("[INÍCIO] Atualizando alíquotas em c170_clone por lotes...")
 
-    conexao = conectar_banco()
+    conexao = conectarBanco()
     cursor = conexao.cursor(dictionary=True)
 
     try:
@@ -51,67 +52,105 @@ async def atualizar_aliquota(empresa_id, lote_tamanho=5000):
 
     finally:
         cursor.close()
-        fechar_banco(conexao)
+        fecharBanco(conexao)
 
-async def atualizar_aliquota_simples(empresa_id, periodo):
-    print("[INÍCIO] Atualizando alíquotas Simples Nacional (sem teto)...")
-    conexao = conectar_banco()
-    cursor = conexao.cursor()
+async def aliquotaSimples(empresa_id, periodo):
+    print("[INÍCIO] Atualizando alíquotas Simples Nacional")
+    conexao = conectarBanco()
+    cursor = conexao.cursor(dictionary=True)
+
     try:
         cursor.execute("""
-            UPDATE c170_clone c
+            SELECT c.id, c.aliquota, c.descr_compl, c.cod_part
+            FROM c170_clone c
             JOIN cadastro_fornecedores f 
-              ON f.cod_part = c.cod_part AND f.empresa_id = %s
-            SET c.aliquota = CONCAT(
-                REPLACE(FORMAT(
-                    CAST(REPLACE(REPLACE(c.aliquota, '%', ''), ',', '.') AS DECIMAL(10,2)) + 3.00,
-                    2
-                ), '.', ','), '%')
+                ON f.cod_part = c.cod_part AND f.empresa_id = %s
             WHERE c.periodo = %s AND c.empresa_id = %s
               AND f.simples = 'Sim'
-              AND c.aliquota RLIKE '^[0-9]+([.,][0-9]*)?%?$'
         """, (empresa_id, periodo, empresa_id))
-        
-        conexao.commit()
-        print("[OK] Alíquotas do Simples atualizadas (sem teto).")
+
+        registros = cursor.fetchall()
+        atualizacoes = []
+
+        for row in registros:
+            aliquota_str = str(row.get('aliquota') or '').strip().upper()
+            
+            if aliquota_str in ['ST', 'ISENTO', 'PAUTA', '']:
+                continue
+
+            try:
+                aliquota = Conversor(row['aliquota'])
+                
+                nova_aliquota = round(aliquota + 3, 2)
+
+                aliquota_str = f"{nova_aliquota:.2f}".replace('.', ',') + '%'
+
+                atualizacoes.append((aliquota_str, row['id']))
+                
+            except Exception as e:
+                print(f"[AVISO] Erro ao processar registro {row['id']}: {e}")
+
+        if atualizacoes:
+            cursor.executemany("""
+                UPDATE c170_clone
+                SET aliquota = %s
+                WHERE id = %s
+            """, atualizacoes)
+
+            conexao.commit()
+
     except Exception as e:
         print(f"[ERRO] ao atualizar alíquota Simples: {e}")
         conexao.rollback()
+
     finally:
         cursor.close()
-        fechar_banco(conexao)
+        fecharBanco(conexao)
+        print("[FIM] Finalização da atualização de alíquota Simples.")
 
-async def atualizar_resultado(empresa_id):
-    print("[INÍCIO] Atualizando resultado em c170_clone (considerando desconto)...")
-    conexao = conectar_banco()
-    cursor = conexao.cursor()
+async def atualizarResultado(empresa_id):
+    print("[INÍCIO] Atualizando resultado")
+    conexao = conectarBanco()
+    cursor = conexao.cursor(dictionary=True)
+
     try:
         cursor.execute("""
-            UPDATE c170_clone
-            SET resultado = CASE
-                WHEN aliquota IS NULL OR TRIM(aliquota) = '' THEN 0
-                WHEN aliquota RLIKE '^[A-Za-z]' THEN 0
-                ELSE
-                    ROUND(
-                        (
-                            CAST(REPLACE(REPLACE(IFNULL(vl_item, '0'), '.', ''), ',', '.') AS DECIMAL(15,4)) -
-                            CAST(REPLACE(REPLACE(IFNULL(NULLIF(vl_desc, ''), '0'), '.', ''), ',', '.') AS DECIMAL(15,4))
-                        ) *
-                        (CAST(REPLACE(REPLACE(aliquota, '%', ''), ',', '.') AS DECIMAL(15,4)) / 100),
-                        2
-                    )
-            END
+            SELECT id, vl_item, vl_desc, aliquota 
+            FROM c170_clone
             WHERE empresa_id = %s
         """, (empresa_id,))
-        conexao.commit()
-        print("[OK] Resultado atualizado com sucesso.")
+
+        registros = cursor.fetchall()
+        total = len(registros)
+
+        atualizacoes = []
+
+        for row in registros:
+            vl_item = Conversor(row['vl_item'])
+            vl_desc = Conversor(row['vl_desc'])
+            aliquota = Conversor(row['aliquota'])
+
+            resultado = round((vl_item - vl_desc) * (aliquota / 100), 2)
+
+            atualizacoes.append((resultado, row['id']))
+
+        if atualizacoes:
+            cursor.executemany("""
+                UPDATE c170_clone
+                SET resultado = %s
+                WHERE id = %s
+            """, atualizacoes)
+
+            conexao.commit()
+            print(f"[OK] Resultado atualizado para {total} registros.")
+
     except Exception as err:
         print(f"[ERRO] ao atualizar resultado: {err}")
         conexao.rollback()
+
     finally:
         cursor.close()
-        fechar_banco(conexao)
+        fecharBanco(conexao)
         print("[FIM] Finalização da atualização de resultado.")
-
 
 
