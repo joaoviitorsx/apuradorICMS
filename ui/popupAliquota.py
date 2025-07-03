@@ -143,7 +143,7 @@ class PopupAliquota(QDialog):
 
             conexao.commit()
             print("[DEBUG] Commit realizado.")
-            self.label.setText("Alíquotas atualizadas com sucesso.")
+            self.label.setText("Alíquotas atualizadas com sucesso. Continuando processamento..")
             self.accept()
 
         except Exception as e:
