@@ -1,5 +1,5 @@
 from db.conexao import conectarBanco, fecharBanco
-from utils.conversor import Conversor
+from utils.conversao import Conversor
 
 async def atualizarAliquota(empresa_id, lote_tamanho=5000):
     print("[INÍCIO] Atualizando alíquotas em c170_clone por lotes...")

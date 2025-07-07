@@ -1,6 +1,6 @@
 import math
 
-def formatar_aliquota(aliquota):
+def formatarAliquota(aliquota):
     aliquota = aliquota.strip()
     if aliquota and aliquota[0].isdigit():
         try:

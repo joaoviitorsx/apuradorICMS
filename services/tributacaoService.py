@@ -2,7 +2,7 @@ import pandas as pd
 import unicodedata
 from PySide6.QtWidgets import QFileDialog
 from db.conexao import conectarBanco, fecharBanco
-from utils.aliquota import formatar_aliquota
+from utils.aliquota import formatarAliquota
 from utils.mensagem import mensagem_aviso, mensagem_error, mensagem_sucesso
 
 COLUNAS_SINONIMAS = {
@@ -63,7 +63,7 @@ def enviar_tributacao(empresa_id, progress_bar):
         df = df.rename(columns=mapeamento)
 
         col_aliquota = mapeamento['ALIQUOTA']
-        df[col_aliquota] = df[col_aliquota].fillna('').astype(str).str.strip().apply(formatar_aliquota)
+        df[col_aliquota] = df[col_aliquota].fillna('').astype(str).str.strip().apply(formatarAliquota)
 
         df_inserir = df[[mapeamento['CODIGO'], mapeamento['PRODUTO'], mapeamento['NCM'], mapeamento['ALIQUOTA']]].copy()
         df_inserir['empresa_id'] = empresa_id

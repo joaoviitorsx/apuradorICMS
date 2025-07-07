@@ -4,17 +4,23 @@ from mysql.connector import Error
 from dotenv import load_dotenv
 
 def env():
-    load_dotenv()
+    envDiretorio = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+    load_dotenv(dotenv_path=envDiretorio, override=True)
+    host = os.getenv('HOST')
+    usuario = os.getenv('USUARIO')
+    banco = os.getenv('BANCO')
     return {
-        'host': os.getenv('HOST'),
-        'usuario': os.getenv('USUARIO'),
+        'host': host,
+        'usuario': usuario,
         'senha': os.getenv('SENHA'),
-        'banco': os.getenv('BANCO')
+        'banco': banco,
+        'port': os.getenv('PORT', '3306')
     }
 
 def conectarBanco():
     try:
         config = env()
+        #print(f"[INFO] Tentando conectar ao banco: host={config['host']}, usuário={config['usuario']}, banco={config['banco']}")
         conexao = mysql.connector.connect(
             host=config['host'],
             user=config['usuario'],
@@ -28,6 +34,7 @@ def conectarBanco():
             sql_mode='STRICT_TRANS_TABLES'
         )
         if conexao.is_connected():
+            print(f"[SUCESSO] Conexão estabelecida com o banco {config['banco']}")
             return conexao
     except Error as e:
         print(f"[ERRO] ao conectar ao banco: {e}")

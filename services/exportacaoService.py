@@ -1,12 +1,8 @@
-import os
-import time
+import asyncio
 import xlsxwriter
-from decimal import Decimal
 from PySide6.QtCore import QThread, Signal
-from ui.popupAliquota import PopupAliquota
 from db.conexao import conectarBanco, fecharBanco
-from utils.mensagem import mensagem_error, mensagem_aviso, mensagem_sucesso
-from services.spedService import sinal_popup
+from services.spedService.pos_processamento import etapas_pos_processamento
 
 class ExportWorker(QThread):
     progress = Signal(int)
@@ -14,12 +10,13 @@ class ExportWorker(QThread):
     erro = Signal(str)
     popup_aliquota = Signal()
 
-    def __init__(self, empresa_id, mes, ano, caminho_arquivo):
+    def __init__(self, empresa_id, mes, ano, caminho_arquivo, janela_pai=None):
         super().__init__()
         self.empresa_id = empresa_id
         self.mes = mes
         self.ano = ano
         self.caminho_arquivo = caminho_arquivo
+        self.janela_pai = janela_pai
 
     def run(self):
         try:
@@ -37,10 +34,18 @@ class ExportWorker(QThread):
                 FROM cadastro_tributacao 
                 WHERE empresa_id = %s AND (aliquota IS NULL OR TRIM(aliquota) = '')
             """, (self.empresa_id,))
-            produtos_nulos = cursor.fetchall()
-            if produtos_nulos:
-                self.erro.emit("Existem produtos com alíquotas nulas. Importe os SPEDs Novamente e preencha as alíquotas.")
-                return
+            if cursor.fetchall():
+                print("[EXPORT] Alíquotas nulas detectadas. Executando pós-processamento...")
+                cursor.close()
+                fecharBanco(conexao)
+                
+                asyncio.run(self.executarPosProcessamento())
+                
+                conexao = conectarBanco()
+                if not conexao:
+                    self.erro.emit("Não foi possível reconectar ao banco de dados.")
+                    return
+                cursor = conexao.cursor()
 
             cursor.execute("""
                 SELECT DISTINCT 
@@ -83,7 +88,6 @@ class ExportWorker(QThread):
             dt_fin_fmt = f"{dt_fin[:2]}/{dt_fin[2:4]}/{dt_fin[4:]}"
             periodo_legivel = f"Período: {dt_ini_fmt} a {dt_fin_fmt}"
 
-            start_time = time.time()
             workbook = xlsxwriter.Workbook(self.caminho_arquivo)
             worksheet = workbook.add_worksheet()
 
@@ -113,9 +117,6 @@ class ExportWorker(QThread):
                     self.progress.emit(progresso)
 
             workbook.close()
-            
-            tempo_total = time.time() - start_time
-            print(f"[DEBUG] Exportação concluída em {tempo_total:.2f} segundos")
             self.progress.emit(100)
             self.finished.emit(self.caminho_arquivo)
 
@@ -127,3 +128,17 @@ class ExportWorker(QThread):
                 fecharBanco(conexao)
             except:
                 pass
+
+    async def executarPosProcessamento(self):
+        try:
+            class MockProgressBar:
+                def setValue(self, value):
+                    pass
+            
+            mock_progress = MockProgressBar()
+            await etapas_pos_processamento(self.empresa_id, mock_progress, self.janela_pai)
+            print("[EXPORT] Pós-processamento concluído. Continuando exportação...")
+            
+        except Exception as e:
+            print(f"[EXPORT] Erro durante pós-processamento: {e}")
+            raise e
