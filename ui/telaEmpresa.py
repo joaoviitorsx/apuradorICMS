@@ -3,23 +3,23 @@ from ui.cadastroEmpresa import EmpresaCadastro
 from ui.telaPrincipal import MainWindow
 from utils.mensagem import mensagem_error, mensagem_aviso
 from utils.icone import usar_icone
-from db.conexao import conectarBanco, fecharBanco
+from db.conexao import conectarBanco, fecharBanco, inicializarBanco
 
 from utils.icone import resource_path
 
-# class WorkerInicializacao(QtCore.QThread):
-#     terminado = QtCore.Signal()
-#     erro = QtCore.Signal(str)
+class WorkerInicializacao(QtCore.QThread):
+    terminado = QtCore.Signal()
+    erro = QtCore.Signal(str)
 
-#     def run(self):
-#         try:
-#             conexao = inicializarBanco()
-#             if conexao:
-#                 print("[DEBUG] Banco e tabelas garantidos com sucesso!")
-#                 fecharBanco(conexao)
-#             self.terminado.emit()
-#         except Exception as e:
-#             self.erro.emit(str(e))
+    def run(self):
+        try:
+            conexao = inicializarBanco()
+            if conexao:
+                print("[DEBUG] Banco e tabelas garantidos com sucesso!")
+                fecharBanco(conexao)
+            self.terminado.emit()
+        except Exception as e:
+            self.erro.emit(str(e))
 
 class WorkerCarregarEmpresas(QtCore.QThread):
     empresas_carregadas = QtCore.Signal(list)
@@ -47,9 +47,9 @@ class EmpresaWindow(QtWidgets.QWidget):
         self.banco_empresas = 'empresas_db'
 
         self._setup_layout()
-        # self._iniciar_verificacao_banco()
+        self._iniciar_verificacao_banco()
 
-        self._carregar_empresas()
+        #self._carregar_empresas()
 
         screen = QtGui.QGuiApplication.screenAt(QtGui.QCursor.pos())
         screen_geometry = screen.availableGeometry() if screen else QtWidgets.QApplication.primaryScreen().availableGeometry()
@@ -100,11 +100,11 @@ class EmpresaWindow(QtWidgets.QWidget):
         self.layout.addWidget(self.cadastrar_btn, alignment=QtCore.Qt.AlignCenter)
         self.layout.addStretch()
 
-    # def _iniciar_verificacao_banco(self):
-    #     self.worker_db = WorkerInicializacao()
-    #     self.worker_db.terminado.connect(self._carregar_empresas)
-    #     self.worker_db.erro.connect(self._erro_banco)
-    #     self.worker_db.start()
+    def _iniciar_verificacao_banco(self):
+        self.worker_db = WorkerInicializacao()
+        self.worker_db.terminado.connect(self._carregar_empresas)
+        self.worker_db.erro.connect(self._erro_banco)
+        self.worker_db.start()
 
     def _carregar_empresas(self):
         self.worker_empresas = WorkerCarregarEmpresas()

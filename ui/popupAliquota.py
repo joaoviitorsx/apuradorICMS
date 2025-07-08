@@ -3,6 +3,8 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QTableW
 from PySide6.QtCore import Qt
 from PySide6 import QtGui
 from db.conexao import conectarBanco, fecharBanco
+from utils.mensagem import mensagem_error, mensagem_aviso
+from utils.aliquota import formatarAliquota
 
 class PopupAliquota(QDialog):
     def __init__(self, empresa_id, parent=None):
@@ -122,29 +124,66 @@ class PopupAliquota(QDialog):
         self.tabela.horizontalHeader().setStretchLastSection(True)
 
     def salvar_dados(self):
-        print("Salvando no banco")
+        print("Iniciando o processo de verificação")
+        
+        linhasPendentes = []
+        for row in range(self.tabela.rowCount()):
+            produto = self.tabela.item(row, 2).text().strip() if self.tabela.item(row, 2) else ""
+            ncm = self.tabela.item(row, 3).text().strip() if self.tabela.item(row, 3) else ""
+            aliquota_bruta = self.tabela.item(row, 4).text().strip() if self.tabela.item(row, 4) else ""
+
+            if not aliquota_bruta:
+                linhasPendentes.append(f"Linha {row + 1}: {produto}")
+
+        if linhasPendentes:
+            mensagem_erro = "As seguintes alíquotas precisam ser preenchidas:\n\n"
+
+            if len(linhasPendentes) <= 10:
+                mensagem_erro += "\n".join(linhasPendentes)
+            else:
+                mensagem_erro += "\n".join(linhasPendentes[:10])
+                mensagem_erro += f"\n\n... e mais {len(linhasPendentes) - 10} produtos."
+
+            mensagem_erro += "\n\n Preencha todas as informações antes de salvar."
+
+            QMessageBox.warning(
+                self,
+                "Aliquotas Pendentes",
+                mensagem_erro,
+            )
+
+            return
+
+        print("[Salvar] iniciando atualizacoes de aliquotas")
         conexao = conectarBanco()
         cursor = conexao.cursor()
 
         try:
             for row in range(self.tabela.rowCount()):
-                produto = self.tabela.item(row, 2).text().strip()
-                ncm = self.tabela.item(row, 3).text().strip()
-                nova_aliquota = self.tabela.item(row, 4).text().strip()
+                produto = self.tabela.item(row, 2).text().strip() if self.tabela.item(row, 2) else ""
+                ncm = self.tabela.item(row, 3).text().strip() if self.tabela.item(row, 3) else ""
+                aliquotaBruta = self.tabela.item(row, 4).text().strip() if self.tabela.item(row, 4) else ""
 
-                print(f"[DEBUG] Atualizando produto='{produto}', NCM='{ncm}', nova_aliquota='{nova_aliquota}'")
+                if not produto or not ncm or not aliquota_bruta:
+                    print(f"[DEBUG] Linha {row + 1} incompleta: Produto='{produto}', NCM='{ncm}', Alíquota='{aliquota_bruta}'")
+                    continue
 
-                if nova_aliquota:
-                    cursor.execute("""
-                        UPDATE cadastro_tributacao
-                        SET aliquota = %s
-                        WHERE produto = %s AND ncm = %s AND empresa_id = %s
-                    """, (nova_aliquota, produto, ncm, self.empresa_id))
+                aliquotaFormatada = formatarAliquota(aliquotaBruta)
 
-            conexao.commit()
-            print("[DEBUG] Commit realizado.")
-            self.label.setText("Alíquotas atualizadas com sucesso. Continuando processamento..")
-            self.accept()
+                print(f"[DEBUG] Atualizando produto: {produto}, NCM: {ncm}, Alíquota: {aliquotaFormatada}")
+                    
+                cursor.execute("""
+                    UPDATE cadastro_tributacao
+                    SET aliquota = %s
+                    WHERE produto = %s AND ncm = %s AND empresa_id = %s
+                """, (aliquota_bruta, produto, ncm, self.empresa_id))
+
+                conexao.commit()
+                print("[DEBUG] Commit realizado.")
+
+                    
+                self.label.setText("Alíquotas atualizadas com sucesso. Continuando processamento..")
+                self.accept()
 
         except Exception as e:
             conexao.rollback()
@@ -153,7 +192,7 @@ class PopupAliquota(QDialog):
         finally:
             cursor.close()
             fecharBanco(conexao)
-
+        
     def exportar_planilha_modelo(self):
         caminho, _ = QFileDialog.getSaveFileName(self, "Salvar Planilha Modelo", "Tributacao.xlsx", "Arquivos Excel (*.xlsx)")
         if not caminho:
