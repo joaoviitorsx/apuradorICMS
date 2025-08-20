@@ -17,14 +17,13 @@ def criar_tabela_empresas(conexao):
         print(f"[ERRO] ao criar tabela 'empresas': {e}")
 
 def criar_indice_se_nao_existir(cursor, nome_tabela, nome_indice, colunas, unique=False):
-    cursor.execute(f"""
+    cursor.execute("""
         SELECT COUNT(*) 
         FROM information_schema.statistics
         WHERE table_schema = DATABASE()
           AND table_name = %s
           AND index_name = %s
     """, (nome_tabela, nome_indice))
-    
     existe = cursor.fetchone()[0]
     if not existe:
         tipo = "UNIQUE INDEX" if unique else "INDEX"
@@ -35,7 +34,6 @@ def criar_indice_se_nao_existir(cursor, nome_tabela, nome_indice, colunas, uniqu
         """)
     else:
         print(f"[DB] Índice {nome_indice} já existe em {nome_tabela}.")
-
 
 def criar_tabelas_principais():
     conexao = conectarBanco()
@@ -214,6 +212,28 @@ def criar_tabelas_principais():
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS c190 (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                empresa_id INT NOT NULL,
+                id_c100 INT,
+                periodo VARCHAR(10),
+                reg VARCHAR(10),
+                cst_icms VARCHAR(10),
+                cfop VARCHAR(60),
+                aliq_icms VARCHAR(255),
+                vl_opr VARCHAR(20),
+                vl_bc_icms VARCHAR(20),  
+                vl_icms VARCHAR(20),
+                vl_bc_icms_st VARCHAR(20),
+                vl_icms_st VARCHAR(20), 
+                vl_red_bc VARCHAR(20),   
+                cod_obs VARCHAR(10),
+                INDEX idx_empresa (empresa_id),
+                INDEX idx_c100 (id_c100) 
+            )
+        """)
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS cadastro_tributacao (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 empresa_id INT,
@@ -221,7 +241,7 @@ def criar_tabelas_principais():
                 produto VARCHAR(255),
                 ncm VARCHAR(20),
                 aliquota VARCHAR(10),
-                aliquota_antiga VARCHAR(10),
+                categoriaFiscal varchar(40),
                 INDEX idx_empresa (empresa_id)
             )
         """)
@@ -295,6 +315,13 @@ def criar_tabelas_principais():
             )
         """)
 
+        # ---------------- Índices  ----------------
+        criar_indice_se_nao_existir(cursor, '0150', 'idx_0150_part_periodo_emp', 'cod_part, periodo, empresa_id')
+        criar_indice_se_nao_existir(cursor, '0200', 'idx_0200_item_periodo_emp', 'cod_item, periodo, empresa_id')
+        criar_indice_se_nao_existir(cursor, 'c100', 'idx_c100_periodo_emp_chv', 'periodo, empresa_id, chv_nfe')
+        criar_indice_se_nao_existir(cursor, 'c100', 'idx_c100_periodo_emp_numdoc_part', 'periodo, empresa_id, num_doc, cod_part')
+        criar_indice_se_nao_existir(cursor, 'c190', 'idx_c190_emp_c100_cst_cfop', 'empresa_id, id_c100, cst_icms, cfop')
+        criar_indice_se_nao_existir(cursor, 'c190', 'idx_c190_emp_periodo', 'empresa_id, periodo')
         criar_indice_se_nao_existir(cursor, 'c170', 'idx_c170_cod_item_empresa', 'cod_item, empresa_id')
         criar_indice_se_nao_existir(cursor, 'cadastro_tributacao', 'idx_tributacao_codigo_empresa', 'codigo, empresa_id')
         criar_indice_se_nao_existir(cursor, 'c170_clone', 'idx_c170clone_cod_item_empresa', 'cod_item, empresa_id')
@@ -322,7 +349,6 @@ def criar_tabelas_principais():
         criar_indice_se_nao_existir(cursor, 'c170', 'idx_c170_empresa_id_id_c100_cfop', 'empresa_id, id_c100, cfop')
         criar_indice_se_nao_existir(cursor, '0200', 'idx_0200_cod_item_empresa_id', 'cod_item, empresa_id')
         criar_indice_se_nao_existir(cursor, 'c170', 'idx_c170_id_empresa', 'id, empresa_id')
-
 
         conexao.commit()
         print("[DB] Todas as tabelas criadas ou atualizadas com sucesso.")

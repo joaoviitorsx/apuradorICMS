@@ -60,7 +60,7 @@ async def salvarDados(conteudo, cursor, conexao, empresa_id, janela=None):
         else:
             return resultado[0] > 0
 
-    def inserir_lote(sql, lote, descricao):
+    def inserir(sql, lote, descricao):
         if not lote: return
         try:
             cursor.executemany(sql, lote)
@@ -296,25 +296,25 @@ async def salvarDados(conteudo, cursor, conexao, empresa_id, janela=None):
                 registros_processados.add(registro_id)
                 contadores["C170"] += 1
 
-        inserir_lote("""
+        inserir("""
             INSERT INTO `0000` (reg, cod_ver, cod_fin, dt_ini, dt_fin, nome, cnpj, cpf, uf, ie, cod_num, im, suframa,
             ind_perfil, ind_ativ, filial, periodo, empresa_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, lote_0000, "|0000|")
 
-        inserir_lote("""
+        inserir("""
             INSERT INTO `0150` (reg, cod_part, nome, cod_pais, cnpj, cpf, ie, cod_mun, suframa, ende, num, compl, bairro,
             cod_uf, uf, pj_pf, periodo, empresa_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, lote_0150, "|0150|")
 
-        inserir_lote("""
+        inserir("""
             INSERT INTO `0200` (reg, cod_item, descr_item, cod_barra, cod_ant_item, unid_inv, tipo_item, cod_ncm,
             ex_ipi, cod_gen, cod_list, aliq_icms, cest, periodo, empresa_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, lote_0200, "|0200|")
 
-        inserir_lote("""
+        inserir("""
             INSERT INTO c100 (
                 periodo, reg, ind_oper, ind_emit, cod_part, cod_mod, cod_sit, ser, num_doc, chv_nfe,
                 dt_doc, dt_e_s, vl_doc, ind_pgto, vl_desc, vl_abat_nt, vl_merc, ind_frt, vl_frt, vl_seg,

@@ -3,23 +3,23 @@ from ui.cadastroEmpresa import EmpresaCadastro
 from ui.telaPrincipal import MainWindow
 from utils.mensagem import mensagem_error, mensagem_aviso
 from utils.icone import usar_icone
-from db.conexao import conectarBanco, fecharBanco, inicializarBanco
+from db.conexao import conectarBanco, fecharBanco
 
 from utils.icone import resource_path
 
-class WorkerInicializacao(QtCore.QThread):
-    terminado = QtCore.Signal()
-    erro = QtCore.Signal(str)
+# class WorkerInicializacao(QtCore.QThread):
+#     terminado = QtCore.Signal()
+#     erro = QtCore.Signal(str)
 
-    def run(self):
-        try:
-            conexao = inicializarBanco()
-            if conexao:
-                print("[DEBUG] Banco e tabelas garantidos com sucesso!")
-                fecharBanco(conexao)
-            self.terminado.emit()
-        except Exception as e:
-            self.erro.emit(str(e))
+#     def run(self):
+#         try:
+#             conexao = iniciliazarBanco()
+#             if conexao:
+#                 print("[DEBUG] Banco e tabelas garantidos com sucesso!")
+#                 fecharBanco(conexao)
+#             self.terminado.emit()
+#         except Exception as e:
+#             self.erro.emit(str(e))
 
 class WorkerCarregarEmpresas(QtCore.QThread):
     empresas_carregadas = QtCore.Signal(list)
@@ -28,6 +28,10 @@ class WorkerCarregarEmpresas(QtCore.QThread):
     def run(self):
         try:
             conexao = conectarBanco()
+            if conexao is None:
+                self.erro.emit("Não foi possível conectar ao banco de dados. Verifique as configurações.")
+                return
+                
             cursor = conexao.cursor()
             cursor.execute("SELECT razao_social FROM empresas ORDER BY razao_social ASC")
             empresas = [row[0] for row in cursor.fetchall()]
@@ -35,7 +39,7 @@ class WorkerCarregarEmpresas(QtCore.QThread):
             fecharBanco(conexao)
             self.empresas_carregadas.emit(empresas)
         except Exception as e:
-            self.erro.emit(str(e))
+            self.erro.emit(f"Erro ao carregar empresas: {str(e)}")
 
 class EmpresaWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -47,9 +51,9 @@ class EmpresaWindow(QtWidgets.QWidget):
         self.banco_empresas = 'empresas_db'
 
         self._setup_layout()
-        self._iniciar_verificacao_banco()
+        #self._iniciar_verificacao_banco()
 
-        #self._carregar_empresas()
+        self._carregar_empresas()
 
         screen = QtGui.QGuiApplication.screenAt(QtGui.QCursor.pos())
         screen_geometry = screen.availableGeometry() if screen else QtWidgets.QApplication.primaryScreen().availableGeometry()
@@ -100,11 +104,11 @@ class EmpresaWindow(QtWidgets.QWidget):
         self.layout.addWidget(self.cadastrar_btn, alignment=QtCore.Qt.AlignCenter)
         self.layout.addStretch()
 
-    def _iniciar_verificacao_banco(self):
-        self.worker_db = WorkerInicializacao()
-        self.worker_db.terminado.connect(self._carregar_empresas)
-        self.worker_db.erro.connect(self._erro_banco)
-        self.worker_db.start()
+    # def _iniciar_verificacao_banco(self):
+    #     self.worker_db = WorkerInicializacao()
+    #     self.worker_db.terminado.connect(self._carregar_empresas)
+    #     self.worker_db.erro.connect(self._erro_banco)
+    #     self.worker_db.start()
 
     def _carregar_empresas(self):
         self.worker_empresas = WorkerCarregarEmpresas()
@@ -152,6 +156,10 @@ class EmpresaWindow(QtWidgets.QWidget):
 
         try:
             conexao = conectarBanco()
+            if conexao is None:
+                mensagem_error("Não foi possível conectar ao banco de dados. Verifique as configurações.")
+                return
+                
             cursor = conexao.cursor()
             cursor.execute("SELECT id FROM empresas WHERE razao_social = %s", (nome_empresa,))
             resultado = cursor.fetchone()
@@ -170,8 +178,8 @@ class EmpresaWindow(QtWidgets.QWidget):
         except Exception as e:
             mensagem_error(f"Erro ao abrir a empresa: {e}")
 
-    def cadastrar_empresa(self, nome_banco):
-        self.empresa_cadastro = EmpresaCadastro(nome_banco)
+    def cadastrar_empresa(self):
+        self.empresa_cadastro = EmpresaCadastro()
         usar_icone(self.empresa_cadastro)
         self.empresa_cadastro.show()
         self.close()

@@ -185,10 +185,17 @@ class MainWindow(QtWidgets.QMainWindow):
         conexao = conectarBanco()
 
         cursor = conexao.cursor()
-        periodo = f"{mes.zfill(2)}/{ano}"
+        periodo = f"{mes.zfill(2)}/{ano}".strip()
+        print(f"[DEBUG] Buscando periodo: '{periodo}' para empresa_id: {self.empresa_id}")
+
+        cursor.execute("""
+            SELECT DISTINCT periodo FROM c170_clone WHERE empresa_id = %s
+        """, (self.empresa_id,))
+        print("[DEBUG] Periodos encontrados:", cursor.fetchall())
+
         cursor.execute("""
             SELECT COUNT(*) FROM c170_clone
-            WHERE empresa_id = %s AND periodo = %s
+            WHERE empresa_id = %s AND TRIM(periodo) = %s
         """, (self.empresa_id, periodo))
         total = cursor.fetchone()[0]
 

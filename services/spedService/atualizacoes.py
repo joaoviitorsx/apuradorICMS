@@ -4,21 +4,24 @@ from utils.conversao import Conversor
 async def atualizarAliquota(empresa_id, lote_tamanho=5000):
     print("[INÍCIO] Atualizando alíquotas em c170_clone por lotes...")
 
-    conexao = conectarBanco()
-    cursor = conexao.cursor(dictionary=True)
+    conexao = conectarBanco(dict_cursor=True)
+    cursor = conexao.cursor(dictionary=True) 
 
     try:
+        print("[DEBUG] Buscando dt_ini na tabela 0000...")
         cursor.execute("SELECT dt_ini FROM `0000` WHERE empresa_id = %s ORDER BY id DESC LIMIT 1", (empresa_id,))
         row = cursor.fetchone()
+        print(f"[DEBUG] Resultado dt_ini: {row}")
         if not row or not row['dt_ini']:
             print("[AVISO] Nenhum dt_ini encontrado. Cancelando.")
             return
 
-        ano = int(row['dt_ini'][4:]) if len(row['dt_ini']) >= 6 else 0
-        coluna = "aliquota" if ano >= 2024 else "aliquota_antiga"
+        coluna = "aliquota"
+        print(f"[DEBUG] Usando coluna: {coluna}")
 
+        print("[DEBUG] Buscando registros para atualização...")
         cursor.execute(f"""
-            SELECT n.id AS id_c170, c.{coluna} AS nova_aliquota
+            SELECT n.id AS id_c170, c.{coluna} AS nova_aliquota, n.descr_compl, n.ncm
             FROM c170_clone n
             JOIN cadastro_tributacao c
               ON c.empresa_id = n.empresa_id
@@ -32,10 +35,18 @@ async def atualizarAliquota(empresa_id, lote_tamanho=5000):
         total = len(registros)
         print(f"[INFO] {total} registros a atualizar...")
 
+        if total == 0:
+            print("[DEBUG] Nenhum registro encontrado para atualização.")
+        else:
+            print(f"[DEBUG] Exemplo de registro para atualizar: {registros[0] if registros else 'Nenhum'}")
+
         for i in range(0, total, lote_tamanho):
             lote = registros[i:i + lote_tamanho]
             dados = [(r['nova_aliquota'][:10], r['id_c170']) for r in lote]
 
+            print(f"[DEBUG] Atualizando lote {i//lote_tamanho + 1} com {len(lote)} itens.")
+            if len(lote) > 0:
+                print(f"[DEBUG] Primeiro item do lote: {lote[0]}")
             cursor.executemany("""
                 UPDATE c170_clone
                 SET aliquota = %s
@@ -56,7 +67,7 @@ async def atualizarAliquota(empresa_id, lote_tamanho=5000):
 
 async def aliquotaSimples(empresa_id, periodo):
     print("[INÍCIO] Atualizando alíquotas Simples Nacional")
-    conexao = conectarBanco()
+    conexao = conectarBanco(dict_cursor=True)
     cursor = conexao.cursor(dictionary=True)
 
     try:
@@ -74,19 +85,14 @@ async def aliquotaSimples(empresa_id, periodo):
 
         for row in registros:
             aliquota_str = str(row.get('aliquota') or '').strip().upper()
-            
             if aliquota_str in ['ST', 'ISENTO', 'PAUTA', '']:
                 continue
 
             try:
                 aliquota = Conversor(row['aliquota'])
-                
                 nova_aliquota = round(aliquota + 3, 2)
-
                 aliquota_str = f"{nova_aliquota:.2f}".replace('.', ',') + '%'
-
                 atualizacoes.append((aliquota_str, row['id']))
-                
             except Exception as e:
                 print(f"[AVISO] Erro ao processar registro {row['id']}: {e}")
 
@@ -96,7 +102,6 @@ async def aliquotaSimples(empresa_id, periodo):
                 SET aliquota = %s
                 WHERE id = %s
             """, atualizacoes)
-
             conexao.commit()
 
     except Exception as e:
@@ -110,7 +115,7 @@ async def aliquotaSimples(empresa_id, periodo):
 
 async def atualizarResultado(empresa_id):
     print("[INÍCIO] Atualizando resultado")
-    conexao = conectarBanco()
+    conexao = conectarBanco(dict_cursor=True)
     cursor = conexao.cursor(dictionary=True)
 
     try:
@@ -129,9 +134,7 @@ async def atualizarResultado(empresa_id):
             vl_item = Conversor(row['vl_item'])
             vl_desc = Conversor(row['vl_desc'])
             aliquota = Conversor(row['aliquota'])
-
             resultado = round((vl_item - vl_desc) * (aliquota / 100), 2)
-
             atualizacoes.append((resultado, row['id']))
 
         if atualizacoes:
@@ -140,7 +143,6 @@ async def atualizarResultado(empresa_id):
                 SET resultado = %s
                 WHERE id = %s
             """, atualizacoes)
-
             conexao.commit()
             print(f"[OK] Resultado atualizado para {total} registros.")
 
@@ -152,5 +154,3 @@ async def atualizarResultado(empresa_id):
         cursor.close()
         fecharBanco(conexao)
         print("[FIM] Finalização da atualização de resultado.")
-
-

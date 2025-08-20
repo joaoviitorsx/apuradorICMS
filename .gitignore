@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+EFD FISCAL 2025.07.txt
+layoutFS.txt
+
 # Distribution / packaging
 .Python
 build/

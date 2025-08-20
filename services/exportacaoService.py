@@ -117,7 +117,7 @@ class ExportWorker(QThread):
                     self.progress.emit(progresso)
 
             workbook.close()
-            self.progress.emit(100)
+            self.progress.emit(95)
             self.finished.emit(self.caminho_arquivo)
 
         except Exception as e:

@@ -35,8 +35,8 @@ class TelaProduto(QtWidgets.QWidget):
 
     def _criar_tabela(self):
         self.tabela = QtWidgets.QTableWidget()
-        self.tabela.setColumnCount(4)
-        self.tabela.setHorizontalHeaderLabels(['Código', 'Produto', 'NCM', 'Alíquota'])
+        self.tabela.setColumnCount(5)
+        self.tabela.setHorizontalHeaderLabels(['Código', 'Produto', 'NCM', 'Alíquota', 'Categoria Fiscal']) 
         self.tabela.horizontalHeader().setStretchLastSection(True)
         self.tabela.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
         self.tabela.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
@@ -84,7 +84,7 @@ class TelaProduto(QtWidgets.QWidget):
         cursor = conexao.cursor()
         try:
             cursor.execute("""
-                SELECT codigo, produto, ncm, aliquota
+                SELECT codigo, produto, ncm, aliquota, categoriaFiscal
                 FROM cadastro_tributacao
                 WHERE empresa_id = %s
             """, (self.empresa_id,))
@@ -126,7 +126,7 @@ class TelaProduto(QtWidgets.QWidget):
 
         dados = [
             self.tabela.item(linha, i).text() if self.tabela.item(linha, i) else ''
-            for i in range(6)
+            for i in range(5)
         ]
         self.abrirDialogo("editar", dados)
 
@@ -195,29 +195,41 @@ class TelaProduto(QtWidgets.QWidget):
         form_layout.setVerticalSpacing(20)
 
         campos = {}
-        labels = ['Código', 'Produto', 'NCM', 'Alíquota']
-        placeholders = ['Ex: 12345', 'Nome do produto', 'Ex: 12345678', 'Ex: 12.00']
+        labels = ['Código', 'Produto', 'NCM', 'Alíquota', 'Categoria Fiscal']
+        placeholders = ['Ex: 12345', 'Nome do produto', 'Ex: 12345678', 'Ex: 12.00', '20% Regra Geral']
 
         for i, label in enumerate(labels):
             chave = unidecode(label.lower().replace(' ', '_'))
-            campo = QtWidgets.QLineEdit()
-            
-            if dados and i < len(dados):
-                campo.setText(dados[i])
-            
-            campo.setPlaceholderText(placeholders[i])
-            
-            if modo == "editar" and label == "Código":
-                campo.setReadOnly(True)
-            
-            if label == "Código":
-                campo.setToolTip("Código único do produto")
-            
-            if "Alíquota" in label:
-                campo.setValidator(QtGui.QDoubleValidator(0.0, 100.0, 2))
-
-            campos[chave] = campo
-            form_layout.addRow(f"{label}:", campo)
+            if label == "Categoria Fiscal":
+                combo = QtWidgets.QComboBox()
+                opcoes = [
+                    ("28% Bebida Alcoólica", "28BebidaAlcoolica"),
+                    ("20% Regra Geral", "20RegraGeral"),
+                    ("12% Cesta Básica", "12CestaBasica"),
+                    ("7% Cesta Básica", "7CestaBasica"),
+                ]
+                for texto, valor in opcoes:
+                    combo.addItem(texto, valor)
+                if dados and i < len(dados):
+                    for idx, (_, valor) in enumerate(opcoes):
+                        if dados[i] == valor:
+                            combo.setCurrentIndex(idx)
+                            break
+                campos[chave] = combo
+                form_layout.addRow(f"{label}:", combo)
+            else:
+                campo = QtWidgets.QLineEdit()
+                if dados and i < len(dados):
+                    campo.setText(dados[i])
+                campo.setPlaceholderText(placeholders[i])
+                if modo == "editar" and label == "Código":
+                    campo.setReadOnly(True)
+                if label == "Código":
+                    campo.setToolTip("Código único do produto")
+                if "Alíquota" in label:
+                    campo.setValidator(QtGui.QDoubleValidator(0.0, 100.0, 2))
+                campos[chave] = campo
+                form_layout.addRow(f"{label}:", campo)
 
         lista_campos = list(campos.values())
         if lista_campos:
@@ -244,7 +256,12 @@ class TelaProduto(QtWidgets.QWidget):
         dialogo.exec()
 
     def _salvar_edicao(self, dialogo, campos, modo):
-        dados = {k: v.text().strip() for k, v in campos.items()}
+        dados = {}
+        for k, v in campos.items():
+            if isinstance(v, QtWidgets.QComboBox):
+                dados[k] = v.currentData()
+            else:
+                dados[k] = v.text().strip()
 
         for campo_nome, valor in dados.items():
             if not valor:
@@ -269,10 +286,10 @@ class TelaProduto(QtWidgets.QWidget):
             if modo.lower() == "editar":
                 cursor.execute("""
                     UPDATE cadastro_tributacao
-                    SET produto = %s, ncm = %s, aliquota = %s
+                    SET produto = %s, ncm = %s, aliquota = %s, categoriaFiscal = %s
                     WHERE empresa_id = %s AND codigo = %s
                 """, (
-                    dados['produto'], dados['ncm'], dados['aliquota'],
+                    dados['produto'], dados['ncm'], dados['aliquota'], dados['categoria_fiscal'],
                     self.empresa_id, dados['codigo']
                 ))
             else:
@@ -286,11 +303,11 @@ class TelaProduto(QtWidgets.QWidget):
 
                 cursor.execute("""
                     INSERT INTO cadastro_tributacao
-                    (empresa_id, codigo, produto, ncm, aliquota)
-                    VALUES (%s, %s, %s, %s, %s)
+                    (empresa_id, codigo, produto, ncm, aliquota, categoriaFiscal)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
                     self.empresa_id, dados['codigo'], dados['produto'],
-                    dados['ncm'], dados['aliquota']
+                    dados['ncm'], dados['aliquota'], dados['categoria_fiscal']
                 ))
 
             conexao.commit()

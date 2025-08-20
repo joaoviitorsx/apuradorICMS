@@ -69,14 +69,13 @@ async def preencherTributacao(empresa_id, parent=None):
     try:
         cursor.execute("""
             INSERT IGNORE INTO cadastro_tributacao (
-                empresa_id, codigo, produto, ncm, aliquota, aliquota_antiga
+                empresa_id, codigo, produto, ncm, aliquota
             )
             SELECT 
                 sub.empresa_id,
                 sub.cod_item AS codigo,
                 sub.produto,
                 sub.ncm,
-                NULL,
                 NULL
             FROM (
                 SELECT 

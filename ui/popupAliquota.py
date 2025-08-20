@@ -1,9 +1,13 @@
+import os
+import traceback
 import pandas as pd
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QFileDialog, QHBoxLayout, QMessageBox, QApplication
+from PySide6.QtWidgets import (
+    QDialog, QVBoxLayout, QLabel, QPushButton, QTableWidget,
+    QTableWidgetItem, QFileDialog, QHBoxLayout, QMessageBox, QApplication
+)
 from PySide6.QtCore import Qt
 from PySide6 import QtGui
 from db.conexao import conectarBanco, fecharBanco
-from utils.mensagem import mensagem_error, mensagem_aviso
 from utils.aliquota import formatarAliquota
 
 class PopupAliquota(QDialog):
@@ -12,96 +16,59 @@ class PopupAliquota(QDialog):
         self.empresa_id = empresa_id
         self.setWindowTitle("Preencher Alíquotas Nulas")
         self.setMinimumSize(800, 600)
-        self.setup_ui()
+        self._setup_ui()
+        self._centralizar_janela()
 
+    def _centralizar_janela(self):
         screen = QtGui.QGuiApplication.screenAt(QtGui.QCursor.pos())
         screen_geometry = screen.availableGeometry() if screen else QApplication.primaryScreen().availableGeometry()
+        self.move(screen_geometry.center() - self.rect().center())
 
-        center_point = screen_geometry.center()
-        self.move(center_point - self.rect().center())
-
-    def setup_ui(self):
+    def _setup_ui(self):
         layout = QVBoxLayout(self)
-
         self.label = QLabel("Preencha as alíquotas nulas antes de prosseguir:")
         layout.addWidget(self.label)
 
         self.tabela = QTableWidget()
         layout.addWidget(self.tabela)
 
-        botoes_extra = QHBoxLayout()
-        
-        self.botao_criar_planilha = QPushButton("Criar Planilha Modelo")
-        self.botao_criar_planilha.clicked.connect(self.exportar_planilha_modelo)
-        self.botao_criar_planilha.setStyleSheet("""
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 6px 12px;
-            }
-            QPushButton:hover {
-                background-color: #0054b3;
-            }
-        """)
-        self.botao_criar_planilha.setCursor(Qt.PointingHandCursor)
-        botoes_extra.addWidget(self.botao_criar_planilha)
+        botoes = QHBoxLayout()
+        botoes.addWidget(self._criar_botao("Criar Planilha Modelo", self.exportar_planilha_modelo))
+        botoes.addWidget(self._criar_botao("Importar Planilha", self.importar_planilha))
+        layout.addLayout(botoes)
 
-        self.botao_importar_planilha = QPushButton("Importar Planilha")
-        self.botao_importar_planilha.clicked.connect(self.importar_planilha)
-        self.botao_importar_planilha.setStyleSheet("""
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 6px 12px;
-            }
-            QPushButton:hover {
-                background-color: #0054b3;
-            }
-        """)
-        self.botao_importar_planilha.setCursor(Qt.PointingHandCursor)
-        botoes_extra.addWidget(self.botao_importar_planilha)
-
-        layout.addLayout(botoes_extra)
-
-        self.botao_salvar = QPushButton("Salvar Tudo")
-        self.botao_salvar.clicked.connect(self.salvar_dados)
-        self.botao_salvar.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                font-weight: bold;
-                border-radius: 6px;
-                padding: 6px 12px;
-            }
-            QPushButton:hover {
-                background-color: #166628;
-            }
-        """)
-        self.botao_salvar.setCursor(Qt.PointingHandCursor)
+        self.botao_salvar = self._criar_botao("Salvar Tudo", self.salvar_dados, cor="#28a745", cor_hover="#166628")
         layout.addWidget(self.botao_salvar)
 
         self.carregar_dados()
 
+    def _criar_botao(self, texto, callback, cor="#007bff", cor_hover="#0054b3"):
+        botao = QPushButton(texto)
+        botao.clicked.connect(callback)
+        botao.setCursor(Qt.PointingHandCursor)
+        botao.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {cor};
+                color: white;
+                font-weight: bold;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }}
+            QPushButton:hover {{
+                background-color: {cor_hover};
+            }}
+        """)
+        return botao
+
     def carregar_dados(self):
         conexao = conectarBanco()
         cursor = conexao.cursor()
-
         cursor.execute("""
-            SELECT 
-            MIN(id) as id,
-            MIN(codigo) as codigo,
-            produto,
-            ncm,
-            NULL as aliquota
-        FROM cadastro_tributacao
-        WHERE empresa_id = %s AND (aliquota IS NULL OR TRIM(aliquota) = '')
-        GROUP BY produto, ncm
+            SELECT MIN(id), MIN(codigo), produto, ncm, NULL
+            FROM cadastro_tributacao
+            WHERE empresa_id = %s AND (aliquota IS NULL OR TRIM(aliquota) = '')
+            GROUP BY produto, ncm
         """, (self.empresa_id,))
-
         dados = cursor.fetchall()
         cursor.close()
         fecharBanco(conexao)
@@ -110,128 +77,103 @@ class PopupAliquota(QDialog):
         self.tabela.setColumnCount(5)
         self.tabela.setHorizontalHeaderLabels(["ID", "Código", "Produto", "NCM", "Alíquota"])
 
-        for row_idx, (id_, codigo, produto, ncm, aliquota) in enumerate(dados):
-            self.tabela.setItem(row_idx, 0, QTableWidgetItem(str(id_)))
-            self.tabela.setItem(row_idx, 1, QTableWidgetItem(str(codigo)))
-            self.tabela.setItem(row_idx, 2, QTableWidgetItem(produto))
-            self.tabela.setItem(row_idx, 3, QTableWidgetItem(ncm))
-            item_aliquota = QTableWidgetItem(aliquota if aliquota else "")
-            item_aliquota.setFlags(item_aliquota.flags() | Qt.ItemIsEditable)
-            self.tabela.setItem(row_idx, 4, item_aliquota)
+        for i, (id_, cod, prod, ncm, aliq) in enumerate(dados):
+            self.tabela.setItem(i, 0, QTableWidgetItem(str(id_)))
+            self.tabela.setItem(i, 1, QTableWidgetItem(str(cod)))
+            self.tabela.setItem(i, 2, QTableWidgetItem(prod))
+            self.tabela.setItem(i, 3, QTableWidgetItem(ncm or ""))
+            item_aliq = QTableWidgetItem(aliq if aliq else "")
+            item_aliq.setFlags(item_aliq.flags() | Qt.ItemIsEditable)
+            self.tabela.setItem(i, 4, item_aliq)
 
         self.tabela.resizeColumnsToContents()
         self.tabela.setColumnWidth(2, max(200, self.tabela.columnWidth(2)))
         self.tabela.horizontalHeader().setStretchLastSection(True)
 
-    def salvar_dados(self):
-        print("Iniciando o processo de verificação")
-        
-        linhasPendentes = []
-        for row in range(self.tabela.rowCount()):
-            produto = self.tabela.item(row, 2).text().strip() if self.tabela.item(row, 2) else ""
-            ncm = self.tabela.item(row, 3).text().strip() if self.tabela.item(row, 3) else ""
-            aliquota_bruta = self.tabela.item(row, 4).text().strip() if self.tabela.item(row, 4) else ""
-
-            if not aliquota_bruta:
-                linhasPendentes.append(f"Linha {row + 1}: {produto}")
-
-        if linhasPendentes:
-            mensagem_erro = "As seguintes alíquotas precisam ser preenchidas:\n\n"
-
-            if len(linhasPendentes) <= 10:
-                mensagem_erro += "\n".join(linhasPendentes)
+    def categoria_por_aliquota(self, aliquota):
+        aliquota_str = str(aliquota).upper().replace('%', '').replace(',', '.').strip()
+        if aliquota_str in ["ISENTO", "ST", "SUBSTITUICAO", "0", "0.00"]:
+            return 'ST'
+        try:
+            aliquota_num = float(aliquota_str)
+            if aliquota_num in [17.00, 12.00, 4.00]:
+                return '20RegraGeral'
+            elif aliquota_num in [5.95, 4.20, 1.54]:
+                return '7CestaBasica'
+            elif aliquota_num in [10.20, 7.20, 2.63]:
+                return '12CestaBasica'
+            elif aliquota_num in [37.80, 30.39, 8.13]:
+                return '28BebidaAlcoolica'
             else:
-                mensagem_erro += "\n".join(linhasPendentes[:10])
-                mensagem_erro += f"\n\n... e mais {len(linhasPendentes) - 10} produtos."
+                return 'regraGeral'
+        except ValueError:
+            return 'regraGeral'
 
-            mensagem_erro += "\n\n Preencha todas as informações antes de salvar."
+    def salvar_dados(self):
+        linhas_pendentes = []
+        for i in range(self.tabela.rowCount()):
+            prod = self.tabela.item(i, 2).text().strip()
+            aliq = self.tabela.item(i, 4).text().strip()
+            if not aliq:
+                linhas_pendentes.append(f"Linha {i + 1}: {prod}")
 
-            QMessageBox.warning(
-                self,
-                "Aliquotas Pendentes",
-                mensagem_erro,
-            )
-
+        if linhas_pendentes:
+            msg = "As seguintes alíquotas precisam ser preenchidas:\n\n"
+            msg += "\n".join(linhas_pendentes[:10])
+            if len(linhas_pendentes) > 10:
+                msg += f"\n\n... e mais {len(linhas_pendentes) - 10} produtos."
+            QMessageBox.warning(self, "Alíquotas Pendentes", msg)
             return
 
-        print("[Salvar] iniciando atualizacoes de aliquotas")
         conexao = conectarBanco()
         cursor = conexao.cursor()
-
         try:
-            for row in range(self.tabela.rowCount()):
-                produto = self.tabela.item(row, 2).text().strip() if self.tabela.item(row, 2) else ""
-                ncm = self.tabela.item(row, 3).text().strip() if self.tabela.item(row, 3) else ""
-                aliquotaBruta = self.tabela.item(row, 4).text().strip() if self.tabela.item(row, 4) else ""
-
-                if not produto or not ncm or not aliquota_bruta:
-                    print(f"[DEBUG] Linha {row + 1} incompleta: Produto='{produto}', NCM='{ncm}', Alíquota='{aliquota_bruta}'")
+            for i in range(self.tabela.rowCount()):
+                id_ = self.tabela.item(i, 0).text().strip()
+                ncm = self.tabela.item(i, 3).text().strip()
+                aliq = self.tabela.item(i, 4).text().strip()
+                if not (id_ and aliq):
                     continue
-
-                aliquotaFormatada = formatarAliquota(aliquotaBruta)
-
-                print(f"[DEBUG] Atualizando produto: {produto}, NCM: {ncm}, Alíquota: {aliquotaFormatada}")
-                    
+                aliq_fmt = formatarAliquota(aliq)
+                categoria = self.categoria_por_aliquota(aliq_fmt)
                 cursor.execute("""
                     UPDATE cadastro_tributacao
-                    SET aliquota = %s
-                    WHERE produto = %s AND ncm = %s AND empresa_id = %s
-                """, (aliquota_bruta, produto, ncm, self.empresa_id))
-
-                conexao.commit()
-                print("[DEBUG] Commit realizado.")
-
-                    
-                self.label.setText("Alíquotas atualizadas com sucesso. Continuando processamento..")
-                self.accept()
-
+                    SET ncm = %s, aliquota = %s, categoriaFiscal = %s
+                    WHERE id = %s AND empresa_id = %s
+                """, (ncm, aliq_fmt, categoria, id_, self.empresa_id))
+            conexao.commit()
+            self.label.setText("Dados atualizados com sucesso.")
+            self.accept()
         except Exception as e:
             conexao.rollback()
             self.label.setText(f"Erro ao salvar: {e}")
-            print(f"[ERRO] {e}")
+            print(f"[ERRO SALVAR]: {e}")
         finally:
             cursor.close()
             fecharBanco(conexao)
-        
+
     def exportar_planilha_modelo(self):
         caminho, _ = QFileDialog.getSaveFileName(self, "Salvar Planilha Modelo", "Tributacao.xlsx", "Arquivos Excel (*.xlsx)")
         if not caminho:
             return
 
         dados = []
-        for row in range(self.tabela.rowCount()):
-            ncm_valor = self.tabela.item(row, 3).text().strip()
-            try:
-                if ncm_valor and ncm_valor.isdigit():
-                    ncm_valor = ncm_valor.zfill(8)
-            except:
-                pass
-                
+        for i in range(self.tabela.rowCount()):
+            ncm_valor = self.tabela.item(i, 3).text().strip().zfill(8)
             dados.append({
-                "Código": self.tabela.item(row, 1).text(),
-                "Produto": self.tabela.item(row, 2).text(),
+                "Código": self.tabela.item(i, 1).text(),
+                "Produto": self.tabela.item(i, 2).text(),
                 "NCM": ncm_valor,
-                "Alíquota": self.tabela.item(row, 4).text()
+                "Alíquota": self.tabela.item(i, 4).text()
             })
 
         df = pd.DataFrame(dados)
-        
         with pd.ExcelWriter(caminho, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
-            worksheet = writer.sheets['Sheet1']
-            for idx, _ in enumerate(df['NCM'], start=2):
-                cell = worksheet.cell(row=idx, column=4)
-                cell.number_format = '@'
+            for i, _ in enumerate(df['NCM'], start=2):
+                writer.sheets['Sheet1'].cell(row=i, column=3).number_format = '@'
 
-        resposta = QMessageBox.question(
-            self,
-            "Abrir Planilha",
-            "Planilha modelo criada com sucesso.\nDeseja abri-la agora?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-
-        if resposta == QMessageBox.Yes:
-            import os
+        if QMessageBox.question(self, "Abrir Planilha", "Planilha criada com sucesso. Deseja abri-la?", QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             os.startfile(caminho)
 
     def importar_planilha(self):
@@ -240,98 +182,37 @@ class PopupAliquota(QDialog):
             return
 
         try:
-            df = pd.read_excel(caminho, dtype=str)
+            df = pd.read_excel(caminho, dtype=str).fillna("")
 
-            print(f"Colunas encontradas na planilha: {list(df.columns)}")
-
-            def normalizar(texto):
+            def norm(col):
                 from unidecode import unidecode
-                return unidecode(str(texto)).strip().lower().replace(" ", "").replace("%", "")
+                return unidecode(str(col)).lower().replace(" ", "").strip()
 
-            colunas_norm = {normalizar(col): col for col in df.columns}
-            print(f"Colunas normalizadas: {colunas_norm}")
+            colunas = {norm(c): c for c in df.columns}
 
-            col_codigo = next((colunas_norm[c] for c in colunas_norm if "codigo" in c or "cod" in c), None)
-            col_aliquota = next((colunas_norm[c] for c in colunas_norm if "aliquota" in c), None)
+            col_codigo = next((colunas[c] for c in colunas if "codigo" in c or "cod" in c), None)
+            col_produto = next((colunas[c] for c in colunas if "produto" in c), None)
+            col_ncm = next((colunas[c] for c in colunas if "ncm" in c), None)
+            col_aliquota = next((colunas[c] for c in colunas if "aliquota" in c), None)
 
-            print(f"Coluna de código identificada: {col_codigo}")
-            print(f"Coluna de alíquota identificada: {col_aliquota}")
-
-            if not col_codigo or not col_aliquota:
-                QMessageBox.warning(self, "Importação falhou",
-                    f"Colunas 'Código' e/ou 'Alíquota' não encontradas na planilha.\n"
-                    f"Colunas disponíveis: {', '.join(df.columns)}")
+            if not all([col_codigo, col_produto, col_ncm, col_aliquota]):
+                QMessageBox.warning(self, "Erro", "Colunas obrigatórias (código, produto, ncm, alíquota) não encontradas.")
                 return
 
-            codigos_planilha = df[[col_codigo, col_aliquota]].dropna()
-
-            codigos_dict = {}
-            erros_formato = []
-
-            valores_livres = {"isento", "insento", "st", "substituicao", "substituicao tributaria"}
-
-            for _, row in codigos_planilha.iterrows():
-                codigo_bruto = str(row[col_codigo]).strip()
-                aliquota_bruta = str(row[col_aliquota]).strip()
-
-                try:
-                    num = float(codigo_bruto)
-                    codigo = str(int(num)) if num.is_integer() else codigo_bruto
-                except ValueError:
-                    codigo = codigo_bruto
-
-                aliquota_normalizada = aliquota_bruta.lower().strip().replace(" ", "")
-
-                if aliquota_normalizada in valores_livres:
-                    codigos_dict[codigo] = aliquota_bruta.upper()
-                    continue
-
-                try:
-                    valor_check = aliquota_normalizada.replace("%", "").replace(",", ".")
-                    valor_num = float(valor_check)
-                
-                    if valor_num < 1:
-                        valor_formatado = f"{valor_num*100:.2f}%".replace(".", ",")
-                    else:
-                        valor_formatado = f"{valor_num:.2f}%".replace(".", ",")
-                    
-                    codigos_dict[codigo] = valor_formatado
-                except ValueError:
-                    erros_formato.append(f"'{codigo}': '{aliquota_bruta}'")
-
-            print(f"Dicionário de códigos/alíquotas: {codigos_dict}")
-            if erros_formato:
-                QMessageBox.warning(self, "Alíquotas com formato inválido",
-                    f"As seguintes alíquotas não puderam ser convertidas:\n"
-                    f"{', '.join(erros_formato[:10])}" +
-                    (f"\n(e mais {len(erros_formato)-10})" if len(erros_formato)>10 else ""))
-
             atualizados = 0
-            nao_encontrados = []
-
-            for row in range(self.tabela.rowCount()):
-                item_codigo = self.tabela.item(row, 1)
-                item_aliquota = self.tabela.item(row, 4)
-
-                if item_codigo and item_aliquota:
-                    codigo = str(item_codigo.text()).strip()
-                    if codigo in codigos_dict:
-                        item_aliquota.setText(codigos_dict[codigo])
+            for i in range(self.tabela.rowCount()):
+                cod_gui = self.tabela.item(i, 1).text().strip()
+                prod_gui = self.tabela.item(i, 2).text().strip()
+                for _, row in df.iterrows():
+                    if str(row[col_codigo]).strip() == cod_gui:
+                        if not self.tabela.item(i, 3).text().strip():
+                            self.tabela.setItem(i, 3, QTableWidgetItem(str(row[col_ncm]).strip().zfill(8)))
+                        if not self.tabela.item(i, 4).text().strip():
+                            self.tabela.setItem(i, 4, QTableWidgetItem(str(row[col_aliquota]).strip()))
                         atualizados += 1
-                    else:
-                        nao_encontrados.append(codigo)
+                        break
 
-            mensagem = f"{atualizados} alíquotas atualizadas com sucesso."
-            if nao_encontrados:
-                mensagem += f"\n\n{len(nao_encontrados)} códigos não encontrados na planilha."
-                if len(nao_encontrados) <= 10:
-                    mensagem += f"\nCódigos não encontrados: {', '.join(nao_encontrados)}"
-                else:
-                    mensagem += f"\nPrimeiros 10 códigos não encontrados: {', '.join(nao_encontrados[:10])}..."
-
-            QMessageBox.information(self, "Importação concluída", mensagem)
+            QMessageBox.information(self, "Importação", f"{atualizados} registros atualizados com sucesso.")
 
         except Exception as e:
-            import traceback
-            print(f"Erro detalhado: {traceback.format_exc()}")
-            QMessageBox.critical(self, "Erro ao importar", f"Ocorreu um erro ao importar a planilha:\n{str(e)}")
+            QMessageBox.critical(self, "Erro ao importar", traceback.format_exc())
