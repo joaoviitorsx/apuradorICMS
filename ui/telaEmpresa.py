@@ -3,39 +3,12 @@ from ui.cadastroEmpresa import EmpresaCadastro
 from ui.telaPrincipal import MainWindow
 from utils.mensagem import mensagem_error, mensagem_aviso
 from utils.icone import usar_icone
-from db.conexao import conectarBanco, fecharBanco, inicializarBanco
-
 from utils.icone import resource_path
-
-class WorkerInicializacao(QtCore.QThread):
-    terminado = QtCore.Signal()
-    erro = QtCore.Signal(str)
-
-    def run(self):
-        try:
-            conexao = inicializarBanco()
-            if conexao:
-                print("[DEBUG] Banco e tabelas garantidos com sucesso!")
-                fecharBanco(conexao)
-            self.terminado.emit()
-        except Exception as e:
-            self.erro.emit(str(e))
-
-class WorkerCarregarEmpresas(QtCore.QThread):
-    empresas_carregadas = QtCore.Signal(list)
-    erro = QtCore.Signal(str)
-
-    def run(self):
-        try:
-            conexao = conectarBanco()
-            cursor = conexao.cursor()
-            cursor.execute("SELECT razao_social FROM empresas ORDER BY razao_social ASC")
-            empresas = [row[0] for row in cursor.fetchall()]
-            cursor.close()
-            fecharBanco(conexao)
-            self.empresas_carregadas.emit(empresas)
-        except Exception as e:
-            self.erro.emit(str(e))
+from controllers.empresa_controller import (
+    InicializacaoWorker,
+    CarregarEmpresasWorker,
+    buscar_empresa_id,
+)
 
 class EmpresaWindow(QtWidgets.QWidget):
     def __init__(self):
@@ -101,13 +74,13 @@ class EmpresaWindow(QtWidgets.QWidget):
         self.layout.addStretch()
 
     def _iniciar_verificacao_banco(self):
-        self.worker_db = WorkerInicializacao()
+        self.worker_db = InicializacaoWorker()
         self.worker_db.terminado.connect(self._carregar_empresas)
         self.worker_db.erro.connect(self._erro_banco)
         self.worker_db.start()
 
     def _carregar_empresas(self):
-        self.worker_empresas = WorkerCarregarEmpresas()
+        self.worker_empresas = CarregarEmpresasWorker()
         self.worker_empresas.empresas_carregadas.connect(self._popular_combo)
         self.worker_empresas.erro.connect(self.exibir_erro_empresas)
         self.worker_empresas.start()
@@ -151,18 +124,11 @@ class EmpresaWindow(QtWidgets.QWidget):
             return
 
         try:
-            conexao = conectarBanco()
-            cursor = conexao.cursor()
-            cursor.execute("SELECT id FROM empresas WHERE razao_social = %s", (nome_empresa,))
-            resultado = cursor.fetchone()
-            cursor.close()
-            fecharBanco(conexao)
-
-            if not resultado:
+            empresa_id = buscar_empresa_id(nome_empresa)
+            if not empresa_id:
                 mensagem_error("Empresa não encontrada na base de dados.")
                 return
 
-            empresa_id = resultado[0]
             self.janela_principal = MainWindow(nome_empresa, empresa_id)
             usar_icone(self.janela_principal)
             self.janela_principal.show()
